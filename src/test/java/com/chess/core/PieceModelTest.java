@@ -1,9 +1,11 @@
 package com.chess.core;
 
-import com.chess.ports.ChessBoard;
-import org.junit.jupiter.api.Test;
 import java.util.List;
-import static org.junit.jupiter.api.Assertions.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
+
+import com.chess.ports.ChessBoard;
 
 public class PieceModelTest {
 
@@ -21,8 +23,8 @@ public class PieceModelTest {
     @Test
     public void testPawnDelegatesToStrategy() {
         ChessBoard board = new ArrayChessBoard();
-        Piece pawn = new Pawn(Color.WHITE, new Position(6, 0));
-        board.placePiece(pawn, new Position(6, 0));
+        Piece pawn = new Pawn(Color.WHITE, new Position(1, 0));
+        board.placePiece(pawn, new Position(1, 0));
         List<Position> moves = pawn.getPossibleMoves(board);
         // Se espera que el peón blanco sin mover en tablero vacío retorne 2 movimientos (avance simple y doble).
         assertEquals(2, moves.size());

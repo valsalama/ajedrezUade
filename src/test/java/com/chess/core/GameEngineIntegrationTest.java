@@ -1,9 +1,10 @@
 package com.chess.core;
 
-import com.chess.ports.ChessBoard;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+
+import com.chess.ports.ChessBoard;
 
 public class GameEngineIntegrationTest {
     private ChessBoard board;
@@ -17,11 +18,11 @@ public class GameEngineIntegrationTest {
 
     @Test
     public void testFullGameIntegration() {
-        Piece whitePawn = new Pawn(Color.WHITE, new Position(6, 0));
-        board.placePiece(whitePawn, new Position(6, 0));
+        Piece whitePawn = new Pawn(Color.WHITE, new Position(1, 0));
+        board.placePiece(whitePawn, new Position(1, 0));
 
-        // Un paso adelante para las blancas (hacia filas más chicas)
-        MoveResult result = gameManager.tryMove(new Position(6, 0), new Position(5, 0));
+        // Un paso adelante para las blancas (hacia filas más grandes, como en Main.java)
+        MoveResult result = gameManager.tryMove(new Position(1, 0), new Position(2, 0));
         assertEquals(MoveResult.SUCCESS, result);
     }
 }

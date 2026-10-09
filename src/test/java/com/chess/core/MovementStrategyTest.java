@@ -1,9 +1,13 @@
 package com.chess.core;
 
-import com.chess.ports.ChessBoard;
-import org.junit.jupiter.api.Test;
 import java.util.List;
-import static org.junit.jupiter.api.Assertions.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+
+import com.chess.ports.ChessBoard;
 
 public class MovementStrategyTest {
 
@@ -61,7 +65,8 @@ public class MovementStrategyTest {
     @Test
     void pawnThatHasNotMovedHas2ForwardMoves() {
         ChessBoard board = new ArrayChessBoard();
-        Position pawnPos = new Position(6, 0);
+        // Fila 1: ahí es donde Main.java/WebMain.java arrancan los peones blancos.
+        Position pawnPos = new Position(1, 0);
         board.placePiece(new DummyPiece(Color.WHITE, pawnPos), pawnPos);
         assertEquals(2, new PawnMovementStrategy().getValidMoves(pawnPos, board).size());
     }
@@ -69,7 +74,7 @@ public class MovementStrategyTest {
     @Test
     void pawnThatAlreadyMovedHas1ForwardMove() {
         ChessBoard board = new ArrayChessBoard();
-        Position pawnPos = new Position(6, 0);
+        Position pawnPos = new Position(1, 0);
         Piece pawn = new DummyPiece(Color.WHITE, pawnPos);
         board.placePiece(pawn, pawnPos);
         pawn.setPosition(pawnPos);
@@ -79,8 +84,8 @@ public class MovementStrategyTest {
     @Test
     void pawnCanCaptureDiagonally() {
         ChessBoard board = new ArrayChessBoard();
-        Position pawnPos = new Position(6, 3);
-        Position enemyPos = new Position(5, 4);
+        Position pawnPos = new Position(1, 3);
+        Position enemyPos = new Position(2, 4);
         board.placePiece(new DummyPiece(Color.WHITE, pawnPos), pawnPos);
         board.placePiece(new DummyPiece(Color.BLACK, enemyPos), enemyPos);
         assertTrue(new PawnMovementStrategy().getValidMoves(pawnPos, board).contains(enemyPos));

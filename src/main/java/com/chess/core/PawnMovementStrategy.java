@@ -1,9 +1,10 @@
 package com.chess.core;
 
-import com.chess.ports.ChessBoard;
-import com.chess.ports.MovementStrategy;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.chess.ports.ChessBoard;
+import com.chess.ports.MovementStrategy;
 
 public class PawnMovementStrategy implements MovementStrategy {
 
@@ -12,8 +13,9 @@ public class PawnMovementStrategy implements MovementStrategy {
         List<Position> moves = new ArrayList<>();
         Piece pawn = board.getPieceAt(from);
 
-        // White moves up the board (decreasing row), Black moves down (increasing row)
-        int direction = (pawn.getColor() == Color.WHITE) ? -1 : 1;
+        // White starts at rows 0-1 and advances toward row 7 (increasing row).
+        // Black starts at rows 6-7 and advances toward row 0 (decreasing row).
+        int direction = (pawn.getColor() == Color.WHITE) ? 1 : -1;
         int oneStepRow = from.getRow() + direction;
 
         if (isInBounds(oneStepRow, from.getColumn())) {

@@ -1,9 +1,10 @@
 package com.chess.core;
 
-import com.chess.ports.ChessBoard;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+
+import com.chess.ports.ChessBoard;
 
 public class GameManagerTest {
     private ChessBoard board;
@@ -17,13 +18,15 @@ public class GameManagerTest {
 
     @Test
     public void testTurnAlternationAndCapture() {
-        Piece whitePawn = new Pawn(Color.WHITE, new Position(6, 0));
-        Piece blackPawn = new Pawn(Color.BLACK, new Position(5, 1));
-        board.placePiece(whitePawn, new Position(6, 0));
-        board.placePiece(blackPawn, new Position(5, 1));
+        // Fila 1 (blancas) y fila 2 (negras): el layout real de Main.java/WebMain.java
+        // tiene a blancas arrancando en las filas 0-1, avanzando hacia filas más grandes.
+        Piece whitePawn = new Pawn(Color.WHITE, new Position(1, 0));
+        Piece blackPawn = new Pawn(Color.BLACK, new Position(2, 1));
+        board.placePiece(whitePawn, new Position(1, 0));
+        board.placePiece(blackPawn, new Position(2, 1));
 
         // Blancas mueven en diagonal y comen el peón negro; cambia el turno y se registra la captura
-        MoveResult result = gameManager.tryMove(new Position(6, 0), new Position(5, 1));
+        MoveResult result = gameManager.tryMove(new Position(1, 0), new Position(2, 1));
 
         assertEquals(MoveResult.SUCCESS, result);
         assertEquals(Color.BLACK, gameManager.getCurrentTurn());
@@ -32,9 +35,9 @@ public class GameManagerTest {
 
     @Test
     public void testPawnCannotMoveDiagonallyWithoutCapturing() {
-        board.placePiece(new Pawn(Color.WHITE, new Position(6, 1)), new Position(6, 1));
+        board.placePiece(new Pawn(Color.WHITE, new Position(1, 1)), new Position(1, 1));
 
-        MoveResult result = gameManager.tryMove(new Position(6, 1), new Position(5, 0));
+        MoveResult result = gameManager.tryMove(new Position(1, 1), new Position(2, 0));
 
         assertEquals(MoveResult.INVALID_MOVE, result);
         assertEquals(Color.WHITE, gameManager.getCurrentTurn());   // el turno no cambia
@@ -42,9 +45,9 @@ public class GameManagerTest {
 
     @Test
     public void testPawnCanDoubleStepFromStart() {
-        board.placePiece(new Pawn(Color.WHITE, new Position(6, 1)), new Position(6, 1));
+        board.placePiece(new Pawn(Color.WHITE, new Position(1, 1)), new Position(1, 1));
 
-        assertEquals(MoveResult.SUCCESS, gameManager.tryMove(new Position(6, 1), new Position(4, 1)));
+        assertEquals(MoveResult.SUCCESS, gameManager.tryMove(new Position(1, 1), new Position(3, 1)));
     }
 
     @Test
