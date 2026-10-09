@@ -1,19 +1,18 @@
 package com.chess.core;
 
+import com.chess.ports.ChessBoard;
+
 public class MoveValidator {
-
     public boolean isValidMove(ChessBoard board, Piece piece, Position destination) {
-        if (board == null || piece == null || destination == null) {
-            return false;
+        if (piece == null) return false;
+        Piece destPiece = board.getPieceAt(destination);
+        if (destPiece != null && destPiece.getColor() == piece.getColor()) return false;
+        
+        for (Position p : piece.getPossibleMoves(board)) {
+            if (p.getRow() == destination.getRow() && p.getColumn() == destination.getColumn()) {
+                return true;
+            }
         }
-
-        // 1) el destino tiene que estar dentro de lo que la pieza puede hacer
-        if (!piece.getPossibleMoves(board).contains(destination)) {
-            return false;
-        }
-
-        // 2) no se puede capturar una pieza propia
-        Piece target = board.getPieceAt(destination);
-        return target == null || target.getColor() != piece.getColor();
+        return false;
     }
 }

@@ -20,6 +20,7 @@ public abstract class Piece {
         this.hasMoved = true;
     }
 
+    public MovementStrategy getMovementStrategy() { return movementStrategy; }
     public boolean hasMoved() { return hasMoved; }
     public Color getColor() { return color; }
     public Position getPosition() { return position; }

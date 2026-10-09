@@ -1,62 +1,35 @@
 package com.chess.core;
 
-public class MoveCommand implements Command {
-    private final ChessBoard board;
-    private final Position from;
-    private final Position to;
-    private final Piece movedPiece;
-    private final Piece capturedPiece;
+import com.chess.ports.ChessBoard;
 
-    public MoveCommand(ChessBoard board, Position from, Position to) {
+public class MoveCommand implements Command {
+    private ChessBoard board;
+    private Position from, to;
+    private Piece movedPiece, capturedPiece;
+
+    public MoveCommand(ChessBoard board, Position from, Position to, Piece movedPiece, Piece capturedPiece) {
         this.board = board;
         this.from = from;
         this.to = to;
-        this.movedPiece = board.getPieceAt(from);
-        this.capturedPiece = board.getPieceAt(to);
+        this.movedPiece = movedPiece;
+        this.capturedPiece = capturedPiece;
     }
 
-    @Override
+    @Override 
     public void execute() {
-        if (movedPiece == null) {
-            return;
-        }
-
         board.removePiece(from);
-
-        movedPiece.setPosition(to);
-
         board.placePiece(movedPiece, to);
+        movedPiece.setPosition(to);
     }
 
-    @Override
+    @Override 
     public void undo() {
-        if (movedPiece == null) {
-            return;
-        }
-
         board.removePiece(to);
-
-        movedPiece.setPosition(from);
         board.placePiece(movedPiece, from);
-
+        movedPiece.setPosition(from);
         if (capturedPiece != null) {
             board.placePiece(capturedPiece, to);
+            capturedPiece.setPosition(to);
         }
-    }
-
-    public Position getFrom() {
-        return from;
-    }
-
-    public Position getTo() {
-        return to;
-    }
-
-    public Piece getMovedPiece() {
-        return movedPiece;
-    }
-
-    public Piece getCapturedPiece() {
-        return capturedPiece;
     }
 }
