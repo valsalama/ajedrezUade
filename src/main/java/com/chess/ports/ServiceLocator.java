@@ -1,4 +1,4 @@
-package main.java.com.chess.ports;
+package com.chess.ports;
 
 import java.util.HashMap;
 import java.util.Map;

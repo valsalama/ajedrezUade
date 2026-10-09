@@ -1,4 +1,4 @@
-package chess;
+package com.chess.core;
 
 public class MoveValidator {
 

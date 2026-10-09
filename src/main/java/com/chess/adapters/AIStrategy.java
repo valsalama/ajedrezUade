@@ -1,4 +1,4 @@
-package com.chess.ports;
+package com.chess.adapters;
 import com.chess.core.Color;
 import com.chess.core.Move;
 

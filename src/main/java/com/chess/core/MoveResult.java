@@ -1,3 +1,3 @@
-package chess;
+package com.chess.core;
 
 public enum MoveResult { SUCCESS, INVALID_MOVE, NOT_YOUR_TURN }

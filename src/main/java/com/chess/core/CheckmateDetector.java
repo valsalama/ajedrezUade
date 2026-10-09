@@ -1,4 +1,4 @@
-package main.java.com.chess.core;
+package com.chess.core;
 
 import java.util.List;
 

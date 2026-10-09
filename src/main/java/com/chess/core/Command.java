@@ -1,3 +1,3 @@
-package main.java.com.chess.core;
+package com.chess.core;
 
 public interface Command { void execute(); void undo(); }

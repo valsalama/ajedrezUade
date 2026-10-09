@@ -1,4 +1,4 @@
-package chess;
+package com.chess.core;
 
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.BeforeEach;

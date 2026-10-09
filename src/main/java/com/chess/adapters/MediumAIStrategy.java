@@ -1,7 +1,7 @@
 package com.chess.adapters;
 
 import com.chess.core.*;
-import com.chess.ports.AIStrategy;
+import com.chess.adapters.AIStrategy;
 import com.chess.ports.ChessBoard;
 import java.util.ArrayList;
 import java.util.List;
