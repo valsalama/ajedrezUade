@@ -20,4 +20,16 @@ public class MoveValidatorTest {
         // Resultado esperado: Retorna falso porque no puede comer a su propia pieza
         assertFalse(validator.isValidMove(board, whiteRook, new Position(0,1)));
     }
+
+    @Test
+    public void testMoveValidatorAcceptsValidMove() {
+        ChessBoard board = new ArrayChessBoard();
+        MoveValidator validator = new MoveValidator();
+
+        Piece whiteRook = new Rook(Color.WHITE, new Position(4, 4));
+    board.placePiece(whiteRook, new Position(4, 4));
+
+    assertTrue(validator.isValidMove(board, whiteRook, new Position(4, 7)));
+    assertFalse(validator.isValidMove(board, whiteRook, new Position(5, 5)));
+}
 }

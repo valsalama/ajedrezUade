@@ -20,8 +20,10 @@ public class PieceModelTest {
 
     @Test
     public void testPawnDelegatesToStrategy() {
-        Piece pawn = new Pawn(Color.WHITE, new Position(1, 0));
-        List<Position> moves = pawn.getPossibleMoves(createEmptyBoard());
+        ChessBoard board = new ArrayChessBoard();
+        Piece pawn = new Pawn(Color.WHITE, new Position(6, 0));
+        board.placePiece(pawn, new Position(6, 0));
+        List<Position> moves = pawn.getPossibleMoves(board);
         // Se espera que el peón blanco sin mover en tablero vacío retorne 2 movimientos (avance simple y doble).
         assertEquals(2, moves.size());
     }

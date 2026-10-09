@@ -17,11 +17,11 @@ public class GameEngineIntegrationTest {
 
     @Test
     public void testFullGameIntegration() {
-        Piece whitePawn = new Pawn(Color.WHITE, new Position(1, 0));
-        board.placePiece(whitePawn, new Position(1, 0));
+        Piece whitePawn = new Pawn(Color.WHITE, new Position(6, 0));
+        board.placePiece(whitePawn, new Position(6, 0));
 
-        // Resultado esperado: Integración básica del motor responde SUCCESS al mover un peón
-        MoveResult result = gameManager.tryMove(new Position(1, 0), new Position(2, 0));
+        // Un paso adelante para las blancas (hacia filas más chicas)
+        MoveResult result = gameManager.tryMove(new Position(6, 0), new Position(5, 0));
         assertEquals(MoveResult.SUCCESS, result);
     }
 }

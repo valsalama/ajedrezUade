@@ -13,7 +13,6 @@ public class ArrayChessBoard implements ChessBoard {
     @Override
     public void placePiece(Piece piece, Position position) {
         board[position.getRow()][position.getColumn()] = piece;
-        if (piece != null) piece.setPosition(position);
     }
 
     @Override

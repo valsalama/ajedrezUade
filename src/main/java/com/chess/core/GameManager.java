@@ -12,6 +12,7 @@ public class GameManager {
     private ChessBoard board;
     private Color currentTurn;
     private CheckDetector checkDetector;
+    private MoveValidator moveValidator;
     private Deque<Command> history;
     private Map<Color, List<Piece>> capturedPieces; // Añadido para los tests de AgosL
 
@@ -19,6 +20,7 @@ public class GameManager {
         this.board = board;
         this.currentTurn = Color.WHITE;
         this.checkDetector = new CheckDetector();
+        this.moveValidator = new MoveValidator();
         this.history = new ArrayDeque<>();
         this.capturedPieces = new HashMap<>();
         this.capturedPieces.put(Color.WHITE, new ArrayList<>());
@@ -33,7 +35,9 @@ public class GameManager {
 
     public MoveResult tryMove(Position from, Position to) {
         Piece piece = board.getPieceAt(from);
-        if (piece == null || piece.getColor() != currentTurn) return MoveResult.NOT_YOUR_TURN;
+        if (piece == null) return MoveResult.INVALID_MOVE;
+        if (piece.getColor() != currentTurn) return MoveResult.NOT_YOUR_TURN;
+        if (!moveValidator.isValidMove(board, piece, to)) return MoveResult.INVALID_MOVE;
 
         ChessBoard clonedBoard = board.clone();
         Piece clonedPiece = clonedBoard.getPieceAt(from);
