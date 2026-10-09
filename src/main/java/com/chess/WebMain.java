@@ -46,7 +46,7 @@ public class WebMain {
         GameManager gameManager = new GameManager(board);
         AIStrategy ai = new MediumAIStrategy();
 
-        ApiServer apiServer = new ApiServer(gameManager, board, ai, 8080);
+        ApiServer apiServer = new ApiServer(gameManager, board, ai, 8081);
         apiServer.start();
     }
 }

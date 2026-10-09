@@ -2,7 +2,7 @@ package com.chess;
 
 import com.chess.adapters.*;
 import com.chess.core.*;
-import com.chess.ports.*;
+import com.chess.ports.*; // <-- Agrega esta línea
 import java.util.Scanner;
 
 public class Main {
