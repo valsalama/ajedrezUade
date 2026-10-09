@@ -1,10 +1,5 @@
 package com.chess.adapters;
 
-import com.chess.core.*;
-import com.chess.ports.ChessBoard;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,18 +8,50 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import com.chess.core.Bishop;
+import com.chess.core.CheckDetector;
+import com.chess.core.CheckmateDetector;
+import com.chess.core.Color;
+import com.chess.core.GameManager;
+import com.chess.core.GameState;
+import com.chess.core.King;
+import com.chess.core.Knight;
+import com.chess.core.Move;
+import com.chess.core.MoveResult;
+import com.chess.core.Pawn;
+import com.chess.core.Piece;
+import com.chess.core.Position;
+import com.chess.core.Queen;
+import com.chess.core.Rook;
+import com.chess.ports.ChessBoard;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 
+/**
+ * Web adapter: exposes the chess engine over a small REST API so an
+ * external frontend (React, plain JS, whatever) can play against it.
+ * No external dependencies: uses the JDK's built-in HttpServer and a
+ * tiny hand-rolled JSON writer, so it only needs the JDK to run.
+ *
+ * Endpoints:
+ *   GET  /api/state          -> full board + turn + game state
+ *   POST /api/move           -> body: {"fromRow":1,"fromCol":0,"toRow":3,"toCol":0}
+ *   POST /api/reset          -> starts a new game
+ */
 public class ApiServer {
 
     private final GameManager gameManager;
     private final ChessBoard board;
+    private final AIStrategy aiStrategy;
     private final CheckDetector checkDetector = new CheckDetector();
     private final CheckmateDetector checkmateDetector = new CheckmateDetector();
     private final HttpServer server;
 
-    public ApiServer(GameManager gameManager, ChessBoard board, int port) throws IOException {
+    /** Humano siempre juega Blancas; la IA pasada acá juega Negras, igual que en Main.java. */
+    public ApiServer(GameManager gameManager, ChessBoard board, AIStrategy aiStrategy, int port) throws IOException {
         this.gameManager = gameManager;
         this.board = board;
+        this.aiStrategy = aiStrategy;
         this.server = HttpServer.create(new InetSocketAddress(port), 0);
 
         server.createContext("/api/state", this::handleState);
@@ -72,6 +99,14 @@ public class ApiServer {
         Position to = new Position(toRow, toCol);
 
         MoveResult result = gameManager.tryMove(from, to);
+
+        // Si el movimiento humano (Blancas) salió bien, le toca a la IA (Negras).
+        if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK) {
+            Move aiMove = aiStrategy.getNextMove(board, Color.BLACK);
+            if (aiMove != null) {
+                gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
+            }
+        }
 
         StringBuilder json = new StringBuilder();
         json.append("{");

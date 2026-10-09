@@ -1,6 +1,8 @@
 package com.chess;
 
+import com.chess.adapters.AIStrategy;
 import com.chess.adapters.ApiServer;
+import com.chess.adapters.MediumAIStrategy;
 import com.chess.core.Bishop;
 import com.chess.core.Color;
 import com.chess.core.GameManager;
@@ -12,6 +14,11 @@ import com.chess.core.Queen;
 import com.chess.core.Rook;
 import com.chess.ports.ChessBoard;
 
+/**
+ * Entry point for playing over HTTP instead of the console.
+ * Keeps Main.java (console mode) untouched; this is just another
+ * adapter on top of the same core/GameManager, same as ConsoleRenderer.
+ */
 public class WebMain {
     public static void main(String[] args) throws Exception {
         ChessBoard board = new com.chess.core.ArrayChessBoard();
@@ -37,8 +44,9 @@ public class WebMain {
         for (int i = 0; i < 8; i++) board.placePiece(new Pawn(Color.BLACK, new Position(6, i)), new Position(6, i));
 
         GameManager gameManager = new GameManager(board);
+        AIStrategy ai = new MediumAIStrategy();
 
-        ApiServer apiServer = new ApiServer(gameManager, board, 8080);
+        ApiServer apiServer = new ApiServer(gameManager, board, ai, 8080);
         apiServer.start();
     }
 }
