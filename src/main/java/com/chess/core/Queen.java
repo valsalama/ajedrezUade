@@ -5,6 +5,7 @@ public class Queen extends Piece {
         this.color = color;
         this.position = position;
         this.type = PieceType.QUEEN;
-        this.movementStrategy = null; // Se completa en A4
+        this.hasMoved = false;
+        this.movementStrategy = new QueenMovementStrategy();
     }
 }

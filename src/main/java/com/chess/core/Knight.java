@@ -5,6 +5,7 @@ public class Knight extends Piece {
         this.color = color;
         this.position = position;
         this.type = PieceType.KNIGHT;
-        this.movementStrategy = null; // Se completa en A4
+        this.hasMoved = false;
+        this.movementStrategy = new KnightMovementStrategy();
     }
 }

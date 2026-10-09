@@ -5,6 +5,7 @@ public class Pawn extends Piece {
         this.color = color;
         this.position = position;
         this.type = PieceType.PAWN;
-        this.movementStrategy = null; // Se completa en A4
+        this.hasMoved = false;
+        this.movementStrategy = new PawnMovementStrategy();
     }
 }

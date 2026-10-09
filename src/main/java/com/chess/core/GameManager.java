@@ -1,117 +1,76 @@
-package chess;
+package com.chess.core;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import com.chess.ports.ChessBoard;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class GameManager {
-
-    private final ChessBoard board;
-    private final MoveValidator moveValidator;
+    private ChessBoard board;
     private Color currentTurn;
-    private final Map<Color, List<Piece>> capturedPieces = new EnumMap<>(Color.class);
+    private CheckDetector checkDetector;
+    private Deque<Command> history;
 
-    public GameManager(ChessBoard board, MoveValidator moveValidator) {
-        if (board == null || moveValidator == null) {
-            throw new IllegalArgumentException("board y moveValidator son obligatorios");
-        }
+    public GameManager(ChessBoard board) {
         this.board = board;
-        this.moveValidator = moveValidator;
-        this.currentTurn = Color.WHITE;                       // siempre arrancan las blancas
-        capturedPieces.put(Color.WHITE, new ArrayList<>());
-        capturedPieces.put(Color.BLACK, new ArrayList<>());
+        this.currentTurn = Color.WHITE;
+        this.checkDetector = new CheckDetector();
+        this.history = new ArrayDeque<>();
     }
+
+    public Color getCurrentTurn() { return currentTurn; }
 
     public MoveResult tryMove(Position from, Position to) {
         Piece piece = board.getPieceAt(from);
+        if (piece == null || piece.getColor() != currentTurn) return MoveResult.NOT_YOUR_TURN;
 
-        if (piece == null) {
-            return MoveResult.INVALID_MOVE;                   // casillero vacío
-        }
-        if (piece.getColor() != currentTurn) {
-            return MoveResult.NOT_YOUR_TURN;
-        }
-        if (!moveValidator.isValidMove(board, piece, to)) {
+        // D6: Simulación en clon para rechazar auto-jaque
+        ChessBoard clonedBoard = board.clone();
+        Piece clonedPiece = clonedBoard.getPieceAt(from);
+        clonedBoard.removePiece(from);
+        clonedBoard.placePiece(clonedPiece, to);
+
+        if (checkDetector.isInCheck(currentTurn, clonedBoard)) {
             return MoveResult.INVALID_MOVE;
         }
 
-        Piece captured = board.getPieceAt(to);
-        if (captured != null) {
-            board.removePiece(to);                            // la saca del tablero
-            capturedPieces.get(captured.getColor()).add(captured);
-        }
-
-        relocate(piece, from, to);
-        switchTurn();
+        // Ejecutar movimiento real
+        board.removePiece(from);
+        board.placePiece(piece, to);
+        piece.setPosition(to);
+        
+        currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
         return MoveResult.SUCCESS;
     }
 
-    public MoveResult tryCastle(Color color, boolean kingSide) {
-    if (color != currentTurn) {
-        return MoveResult.NOT_YOUR_TURN;
-    }
+    // C5: Validación de Enroque
+    public MoveResult tryCastle(Position kingFrom, Position rookFrom) {
+        Piece king = board.getPieceAt(kingFrom);
+        Piece rook = board.getPieceAt(rookFrom);
 
-    int row = backRank(color);
-    int rookCol = kingSide ? 7 : 0;
-
-    Piece king = board.getPieceAt(new Position(row, 4));
-    Piece rook = board.getPieceAt(new Position(row, rookCol));
-
-    // 1) tienen que ser rey y torre propios
-    if (king == null || rook == null
-            || king.getType() != PieceType.KING || rook.getType() != PieceType.ROOK
-            || king.getColor() != color || rook.getColor() != color) {
-        return MoveResult.INVALID_MOVE;
-    }
-
-    // 2) ninguno se movió antes
-    if (king.hasMoved() || rook.hasMoved()) {
-        return MoveResult.INVALID_MOVE;
-    }
-
-    // 3) camino libre entre rey y torre
-    int from = Math.min(4, rookCol) + 1;
-    int to = Math.max(4, rookCol) - 1;
-    for (int col = from; col <= to; col++) {
-        if (!board.isEmpty(new Position(row, col))) {
+        if (king == null || rook == null || king.getType() != PieceType.KING || rook.getType() != PieceType.ROOK) 
             return MoveResult.INVALID_MOVE;
+        if (king.getColor() != currentTurn || rook.getColor() != currentTurn) 
+            return MoveResult.NOT_YOUR_TURN;
+        if (king.hasMoved() || rook.hasMoved() || checkDetector.isInCheck(currentTurn, board)) 
+            return MoveResult.INVALID_MOVE;
+
+        int direction = kingFrom.getColumn() < rookFrom.getColumn() ? 1 : -1;
+        for (int col = kingFrom.getColumn() + direction; col != rookFrom.getColumn(); col += direction) {
+            if (!board.isEmpty(new Position(kingFrom.getRow(), col))) return MoveResult.INVALID_MOVE;
         }
-    }
 
-    // 4) ejecutar: el rey va 2 casilleros hacia la torre, la torre pasa del otro lado
-    int kingDest = kingSide ? 6 : 2;
-    int rookDest = kingSide ? 5 : 3;
-    relocate(king, new Position(row, 4), new Position(row, kingDest));
-    relocate(rook, new Position(row, rookCol), new Position(row, rookDest));
+        board.removePiece(kingFrom);
+        board.removePiece(rookFrom);
+        
+        Position newKingPos = new Position(kingFrom.getRow(), kingFrom.getColumn() + (direction * 2));
+        Position newRookPos = new Position(kingFrom.getRow(), newKingPos.getColumn() - direction);
+        
+        king.setPosition(newKingPos);
+        rook.setPosition(newRookPos);
+        board.placePiece(king, newKingPos);
+        board.placePiece(rook, newRookPos);
 
-    switchTurn();
-    return MoveResult.SUCCESS;
-}
-
-private int backRank(Color color) {
-    return color == Color.WHITE ? 7 : 0;      // cambiar si tu equipo usa la convención inversa
-}
-
-    public Color getCurrentTurn() {
-        return currentTurn;
-    }
-
-    /** Piezas de ese color que ya fueron capturadas (las "perdidas"). */
-    public List<Piece> getCapturedPieces(Color color) {
-        return Collections.unmodifiableList(capturedPieces.get(color));
-    }
-
-    // ---------- helpers privados (los reutiliza tryCastle en C5) ----------
-
-    private void relocate(Piece piece, Position from, Position to) {
-        board.removePiece(from);
-        board.placePiece(piece, to);
-        piece.setPosition(to);                                // acá se marca hasMoved
-    }
-
-    private void switchTurn() {
         currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
+        return MoveResult.SUCCESS;
     }
 }

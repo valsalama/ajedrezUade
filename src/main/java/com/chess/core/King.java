@@ -5,6 +5,7 @@ public class King extends Piece {
         this.color = color;
         this.position = position;
         this.type = PieceType.KING;
-        this.movementStrategy = null; // Se completa en A4
+        this.hasMoved = false;
+        this.movementStrategy = new KingMovementStrategy();
     }
 }
