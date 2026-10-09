@@ -48,6 +48,52 @@ public class GameManager {
         return MoveResult.SUCCESS;
     }
 
+    public MoveResult tryCastle(Color color, boolean kingSide) {
+    if (color != currentTurn) {
+        return MoveResult.NOT_YOUR_TURN;
+    }
+
+    int row = backRank(color);
+    int rookCol = kingSide ? 7 : 0;
+
+    Piece king = board.getPieceAt(new Position(row, 4));
+    Piece rook = board.getPieceAt(new Position(row, rookCol));
+
+    // 1) tienen que ser rey y torre propios
+    if (king == null || rook == null
+            || king.getType() != PieceType.KING || rook.getType() != PieceType.ROOK
+            || king.getColor() != color || rook.getColor() != color) {
+        return MoveResult.INVALID_MOVE;
+    }
+
+    // 2) ninguno se movió antes
+    if (king.hasMoved() || rook.hasMoved()) {
+        return MoveResult.INVALID_MOVE;
+    }
+
+    // 3) camino libre entre rey y torre
+    int from = Math.min(4, rookCol) + 1;
+    int to = Math.max(4, rookCol) - 1;
+    for (int col = from; col <= to; col++) {
+        if (!board.isEmpty(new Position(row, col))) {
+            return MoveResult.INVALID_MOVE;
+        }
+    }
+
+    // 4) ejecutar: el rey va 2 casilleros hacia la torre, la torre pasa del otro lado
+    int kingDest = kingSide ? 6 : 2;
+    int rookDest = kingSide ? 5 : 3;
+    relocate(king, new Position(row, 4), new Position(row, kingDest));
+    relocate(rook, new Position(row, rookCol), new Position(row, rookDest));
+
+    switchTurn();
+    return MoveResult.SUCCESS;
+}
+
+private int backRank(Color color) {
+    return color == Color.WHITE ? 7 : 0;      // cambiar si tu equipo usa la convención inversa
+}
+
     public Color getCurrentTurn() {
         return currentTurn;
     }

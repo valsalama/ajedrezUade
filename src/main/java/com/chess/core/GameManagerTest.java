@@ -61,4 +61,54 @@ class GameManagerTest {
         assertSame(whiteRook, board.getPieceAt(new Position(4, 5)));   // la capturada ya no está
         assertTrue(board.isEmpty(new Position(4, 0)));
     }
+
+    @Test
+    void kingSideCastleMovesKingAndRook() {
+    put(new King(Color.WHITE, new Position(7, 4)));
+    put(new Rook(Color.WHITE, new Position(7, 7)));
+
+    assertEquals(MoveResult.SUCCESS, game.tryCastle(Color.WHITE, true));
+
+    assertEquals(PieceType.KING, board.getPieceAt(new Position(7, 6)).getType());
+    assertEquals(PieceType.ROOK, board.getPieceAt(new Position(7, 5)).getType());
+    assertTrue(board.isEmpty(new Position(7, 4)));
+    assertTrue(board.isEmpty(new Position(7, 7)));
+    assertEquals(Color.BLACK, game.getCurrentTurn());
+}
+
+@Test
+    void queenSideCastleMovesKingAndRook() {
+    put(new King(Color.WHITE, new Position(7, 4)));
+    put(new Rook(Color.WHITE, new Position(7, 0)));
+
+    assertEquals(MoveResult.SUCCESS, game.tryCastle(Color.WHITE, false));
+
+    assertEquals(PieceType.KING, board.getPieceAt(new Position(7, 2)).getType());
+    assertEquals(PieceType.ROOK, board.getPieceAt(new Position(7, 3)).getType());
+}
+
+@Test
+void castleRejectedWhenPathIsBlocked() {
+    put(new King(Color.WHITE, new Position(7, 4)));
+    put(new Rook(Color.WHITE, new Position(7, 7)));
+    put(new Knight(Color.WHITE, new Position(7, 6)));
+
+    assertEquals(MoveResult.INVALID_MOVE, game.tryCastle(Color.WHITE, true));
+    assertEquals(Color.WHITE, game.getCurrentTurn());            // no gasta el turno
+}
+
+@Test
+void castleRejectedWhenRookAlreadyMoved() {
+    put(new King(Color.WHITE, new Position(7, 4)));
+    put(new Rook(Color.WHITE, new Position(7, 7)));
+    put(new Rook(Color.BLACK, new Position(0, 0)));
+
+    // la torre blanca sale y vuelve; la negra hace lo mismo para respetar los turnos
+    assertEquals(MoveResult.SUCCESS, game.tryMove(new Position(7, 7), new Position(6, 7)));
+    assertEquals(MoveResult.SUCCESS, game.tryMove(new Position(0, 0), new Position(1, 0)));
+    assertEquals(MoveResult.SUCCESS, game.tryMove(new Position(6, 7), new Position(7, 7)));
+    assertEquals(MoveResult.SUCCESS, game.tryMove(new Position(1, 0), new Position(0, 0)));
+
+    assertEquals(MoveResult.INVALID_MOVE, game.tryCastle(Color.WHITE, true));
+}
 }
