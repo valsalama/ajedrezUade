@@ -1,3 +1,4 @@
+
 package com.chess.core;
 
 import org.junit.jupiter.api.Test;
