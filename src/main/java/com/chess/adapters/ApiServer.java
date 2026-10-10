@@ -102,10 +102,12 @@ public class ApiServer {
 
         // Si el movimiento humano (Blancas) salió bien, le toca a la IA (Negras).
         if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK) {
-            Move aiMove = aiStrategy.getNextMove(board, Color.BLACK);
+            Move aiMove = pickLegalAiMove(Color.BLACK);
             if (aiMove != null) {
                 gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
             }
+            // Si aiMove es null, no hay movimientos legales para Negras: es jaque mate
+            // o ahogado, y buildStateJson() ya lo refleja a través de checkmateDetector.
         }
 
         StringBuilder json = new StringBuilder();
@@ -115,6 +117,46 @@ public class ApiServer {
         json.append("}");
 
         sendJson(exchange, 200, json.toString());
+    }
+
+    /**
+     * Elige un movimiento para la IA que además de ser válido para la pieza,
+     * no deje a su propio rey en jaque. EasyAIStrategy/MediumAIStrategy no
+     * chequean esto (solo miran cómo se mueve cada pieza), así que ese filtro
+     * de legalidad real se hace acá, igual que GameManager lo hace para el humano.
+     * Si hay capturas legales se prioriza una de ellas (onda MediumAIStrategy);
+     * si no, cualquier otro movimiento legal al azar. Null = no hay movimientos
+     * legales (jaque mate o ahogado).
+     */
+    private Move pickLegalAiMove(Color color) {
+        List<Move> legalCaptures = new java.util.ArrayList<>();
+        List<Move> legalOthers = new java.util.ArrayList<>();
+
+        for (int r = 0; r < 8; r++) {
+            for (int c = 0; c < 8; c++) {
+                Position from = new Position(r, c);
+                Piece piece = board.getPieceAt(from);
+                if (piece == null || piece.getColor() != color) continue;
+
+                for (Position to : piece.getPossibleMoves(board)) {
+                    ChessBoard clone = board.clone();
+                    Piece clonedPiece = clone.getPieceAt(from);
+                    boolean wasCapture = !clone.isEmpty(to);
+                    clone.removePiece(from);
+                    clone.placePiece(clonedPiece, to);
+
+                    if (!checkDetector.isInCheck(color, clone)) {
+                        Move move = new Move(from, to);
+                        if (wasCapture) legalCaptures.add(move);
+                        else legalOthers.add(move);
+                    }
+                }
+            }
+        }
+
+        if (!legalCaptures.isEmpty()) return legalCaptures.get(0);
+        if (!legalOthers.isEmpty()) return legalOthers.get(new java.util.Random().nextInt(legalOthers.size()));
+        return null;
     }
 
     // ---------- JSON building ----------
