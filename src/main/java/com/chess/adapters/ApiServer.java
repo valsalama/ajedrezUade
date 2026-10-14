@@ -37,6 +37,7 @@ import com.sun.net.httpserver.HttpServer;
  *   GET  /api/state          -> full board + turn + game state
  *   POST /api/move           -> body: {"fromRow":1,"fromCol":0,"toRow":3,"toCol":0}
  *   POST /api/reset          -> starts a new game
+ *   POST /api/undo           -> deshace tu última jugada y la de la IA
  */
 public class ApiServer {
 
@@ -57,6 +58,7 @@ public class ApiServer {
         server.createContext("/api/state", this::handleState);
         server.createContext("/api/move", this::handleMove);
         server.createContext("/api/reset", this::handleReset);
+        server.createContext("/api/undo", this::handleUndo);
         server.setExecutor(null);
     }
 
@@ -79,6 +81,26 @@ public class ApiServer {
             return;
         }
         resetBoard();
+        sendJson(exchange, 200, buildStateJson());
+    }
+
+    private void handleUndo(HttpExchange exchange) throws IOException {
+        if (withCors(exchange, "POST")) return;
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
+            return;
+        }
+
+        // Como la IA juega su jugada en el mismo request que la tuya, lo que
+        // el humano percibe como "una jugada atrás" son en realidad DOS
+        // movimientos guardados en el historial: el de la IA (el último) y
+        // el tuyo (el anterior a ese). Por eso se deshacen de a dos.
+        // gameManager.undoLastMove() ya no hace nada si el historial está
+        // vacío, así que esto es seguro incluso al principio de la partida
+        // o si la IA no llegó a mover (p. ej. porque tu jugada fue mate).
+        gameManager.undoLastMove();
+        gameManager.undoLastMove();
+
         sendJson(exchange, 200, buildStateJson());
     }
 
@@ -167,11 +189,20 @@ public class ApiServer {
 
         Color turn = gameManager.getCurrentTurn();
         boolean inCheck = checkDetector.isInCheck(turn, board);
-        boolean isCheckmate = inCheck && checkmateDetector.isCheckmate(turn, board);
+        boolean hasLegalMove = checkmateDetector.hasAnyLegalMove(turn, board);
 
-        GameState state = isCheckmate ? GameState.CHECKMATE
-                : inCheck ? GameState.CHECK
-                : GameState.IN_PROGRESS;
+        // A quien le toca jugar (turn) no tiene NINGÚN movimiento legal:
+        // si está en jaque es jaque mate, si no, es ahogado (tablas).
+        GameState state;
+        if (inCheck && !hasLegalMove) {
+            state = GameState.CHECKMATE;
+        } else if (!inCheck && !hasLegalMove) {
+            state = GameState.DRAW;
+        } else if (inCheck) {
+            state = GameState.CHECK;
+        } else {
+            state = GameState.IN_PROGRESS;
+        }
 
         json.append("\"turn\":\"").append(turn).append("\",");
         json.append("\"gameState\":\"").append(state).append("\",");

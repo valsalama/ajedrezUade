@@ -20,6 +20,17 @@ public abstract class Piece {
         this.hasMoved = true;
     }
 
+    /**
+     * Pone la pieza en una posición sin tocar hasMoved. Solo lo usa
+     * MoveCommand.undo() para devolver la pieza a como estaba antes del
+     * movimiento que se deshace (si no se había movido antes, tiene que
+     * seguir sin haberse movido después del undo).
+     */
+    void restorePosition(Position position, boolean hasMovedBefore) {
+        this.position = position;
+        this.hasMoved = hasMovedBefore;
+    }
+
     public MovementStrategy getMovementStrategy() { return movementStrategy; }
     public boolean hasMoved() { return hasMoved; }
     public Color getColor() { return color; }

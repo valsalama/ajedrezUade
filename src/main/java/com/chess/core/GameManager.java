@@ -54,12 +54,36 @@ public class GameManager {
             capturedPieces.get(currentTurn).add(targetPiece);
         }
 
-        board.removePiece(from);
-        board.placePiece(piece, to);
-        piece.setPosition(to);
-        
+        // El movimiento ahora se hace a través de un Command, para que quede
+        // en el historial y se pueda deshacer con undoLastMove().
+        MoveCommand command = new MoveCommand(board, from, to, piece, targetPiece);
+        command.execute();
+        history.push(command);
+
+        // Coronación: un peón que llega a la última fila se convierte en Dama.
+        promoteIfNeeded(piece, to);
+
         currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
         return MoveResult.SUCCESS;
+    }
+
+    /**
+     * Si la pieza que acaba de moverse es un peón y llegó a la última fila
+     * (7 para Blancas, 0 para Negras), lo reemplaza por una Dama. Es la
+     * regla de coronación simplificada: siempre corona a Dama, que es la
+     * pieza más fuerte y la elección casi universal en la práctica. Si en
+     * algún momento se quiere dejar elegir la pieza (Torre/Alfil/Caballo),
+     * este es el único lugar que habría que tocar para eso.
+     */
+    private void promoteIfNeeded(Piece piece, Position to) {
+        if (piece.getType() != PieceType.PAWN) return;
+
+        int lastRow = (piece.getColor() == Color.WHITE) ? 7 : 0;
+        if (to.getRow() != lastRow) return;
+
+        Queen promoted = new Queen(piece.getColor(), to);
+        board.removePiece(to);
+        board.placePiece(promoted, to);
     }
 
     public MoveResult tryCastle(Position kingFrom, Position rookFrom) {
@@ -92,11 +116,28 @@ public class GameManager {
         currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
         return MoveResult.SUCCESS;
     }
+    /** Para saber desde afuera si hay algo para deshacer (ej. deshabilitar el botón en la UI). */
+    public boolean canUndo() {
+        return !history.isEmpty();
+    }
+
     public void undoLastMove() {
-        if (!history.isEmpty()) {
-            Command lastCommand = history.pop();
-            lastCommand.undo();
-            currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
+        if (history.isEmpty()) return;
+
+        Command lastCommand = history.pop();
+        lastCommand.undo();
+
+        // Si el movimiento deshecho había capturado una pieza, hay que
+        // sacarla de la lista de capturadas: si no, queda figurando como
+        // comida a pesar de que el undo la devolvió al tablero.
+        if (lastCommand instanceof MoveCommand) {
+            MoveCommand moveCommand = (MoveCommand) lastCommand;
+            Piece captured = moveCommand.getCapturedPiece();
+            if (captured != null) {
+                capturedPieces.get(moveCommand.getMovedPieceColor()).remove(captured);
+            }
         }
+
+        currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
     }
 }
