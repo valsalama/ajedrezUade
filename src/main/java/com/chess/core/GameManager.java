@@ -82,6 +82,7 @@ public class GameManager {
         if (to.getRow() != lastRow) return;
 
         Queen promoted = new Queen(piece.getColor(), to);
+        promoted.setId(piece.getId());
         board.removePiece(to);
         board.placePiece(promoted, to);
     }

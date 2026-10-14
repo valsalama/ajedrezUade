@@ -122,6 +122,16 @@ public class ApiServer {
 
         MoveResult result = gameManager.tryMove(from, to);
 
+        // Si tu jugada deja a la IA en jaque, se nota ACÁ, antes de que la IA
+        // responda. Si no se guarda ahora, se pierde: la IA contesta en el
+        // mismo request y el estado final que se manda de vuelta ya refleja
+        // su jugada (normalmente ya no muestra más jaque). Por eso se manda
+        // este dato aparte, para poder avisar "pusiste en jaque" en el
+        // frontend aunque el estado final ya haya cambiado.
+        boolean gaveCheck = result == MoveResult.SUCCESS
+                && gameManager.getCurrentTurn() == Color.BLACK
+                && checkDetector.isInCheck(Color.BLACK, board);
+
         // Si el movimiento humano (Blancas) salió bien, le toca a la IA (Negras).
         if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK) {
             Move aiMove = pickLegalAiMove(Color.BLACK);
@@ -135,6 +145,7 @@ public class ApiServer {
         StringBuilder json = new StringBuilder();
         json.append("{");
         json.append("\"result\":\"").append(result).append("\",");
+        json.append("\"gaveCheck\":").append(gaveCheck).append(",");
         json.append("\"state\":").append(buildStateJson());
         json.append("}");
 
@@ -229,7 +240,8 @@ public class ApiServer {
 
     private String pieceJson(Piece piece) {
         if (piece == null) return "null";
-        return "{\"type\":\"" + piece.getType() + "\",\"color\":\"" + piece.getColor() + "\"}";
+        return "{\"id\":\"" + piece.getId() + "\",\"type\":\"" + piece.getType()
+                + "\",\"color\":\"" + piece.getColor() + "\"}";
     }
 
     private String capturedJson(Color color) {
@@ -237,7 +249,7 @@ public class ApiServer {
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i < captured.size(); i++) {
             if (i > 0) json.append(",");
-            json.append("\"").append(captured.get(i).getType()).append("\"");
+            json.append(pieceJson(captured.get(i)));
         }
         json.append("]");
         return json.toString();
