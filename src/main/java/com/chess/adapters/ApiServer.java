@@ -11,6 +11,7 @@ import java.util.List;
 import com.chess.core.Bishop;
 import com.chess.core.CheckDetector;
 import com.chess.core.Color;
+import com.chess.core.Difficulty;
 import com.chess.core.DrawReason;
 import com.chess.core.GameManager;
 import com.chess.core.GameState;
@@ -18,6 +19,7 @@ import com.chess.core.King;
 import com.chess.core.Knight;
 import com.chess.core.Move;
 import com.chess.core.MoveResult;
+import com.chess.core.MoveSearcher;
 import com.chess.core.Pawn;
 import com.chess.core.Piece;
 import com.chess.core.Position;
@@ -35,6 +37,9 @@ public class ApiServer {
     private final CheckDetector checkDetector = new CheckDetector();
     private final HttpServer server;
     private static final Color HUMAN_COLOR = Color.WHITE;
+    private static final Color AI_COLOR = Color.BLACK;
+    private final java.util.Random random = new java.util.Random();
+    private Difficulty difficulty = Difficulty.MEDIUM; // se cambia al empezar una partida (POST /api/reset)
 
     public ApiServer(GameManager gameManager, ChessBoard board, AIStrategy aiStrategy, int port) throws IOException {
         this.gameManager = gameManager;
@@ -46,6 +51,8 @@ public class ApiServer {
         server.createContext("/api/move", this::handleMove);
         server.createContext("/api/reset", this::handleReset);
         server.createContext("/api/undo", this::handleUndo);
+        server.createContext("/api/hint", this::handleHint);
+        server.createContext("/api/positions", this::handlePositions);
         server.setExecutor(null);
     }
 
@@ -65,8 +72,74 @@ public class ApiServer {
             sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
             return;
         }
+        // El body es opcional: {"difficulty":"EASY" | "MEDIUM" | "HARD"}. Sin body se mantiene el nivel actual.
+        String body = readBody(exchange);
+        Difficulty requested = extractDifficulty(body);
+        if (requested != null) difficulty = requested;
+
         resetBoard();
         sendJson(exchange, 200, buildStateJson());
+    }
+
+    /** Pista: la mejor jugada que encuentra el motor para quien tiene el turno (si es el jugador y la partida sigue). */
+    private void handleHint(HttpExchange exchange) throws IOException {
+        if (withCors(exchange, "GET")) return;
+
+        String json = "{\"hint\":null}";
+        if (gameManager.getCurrentTurn() == HUMAN_COLOR && !isGameOver()) {
+            Move best = new MoveSearcher(gameManager, board).findBestMove(4, 2000, 0);
+            if (best != null) {
+                json = "{\"hint\":{\"fromRow\":" + best.getFrom().getRow() + ",\"fromCol\":" + best.getFrom().getColumn()
+                        + ",\"toRow\":" + best.getTo().getRow() + ",\"toCol\":" + best.getTo().getColumn() + "}}";
+            }
+        }
+        sendJson(exchange, 200, json);
+    }
+
+    /**
+     * El tablero en cada momento de la partida para poder navegar el historial:
+     * "boards"[0] es la posición inicial y "boards"[n] la que quedó tras la jugada n;
+     * "moves"[n-1] es el origen y destino de esa jugada.
+     */
+    private void handlePositions(HttpExchange exchange) throws IOException {
+        if (withCors(exchange, "GET")) return;
+
+        StringBuilder json = new StringBuilder("{\"boards\":[");
+        List<Piece[][]> positions = gameManager.getPositions();
+        for (int i = 0; i < positions.size(); i++) {
+            if (i > 0) json.append(",");
+            json.append("[");
+            for (int row = 0; row < 8; row++) {
+                if (row > 0) json.append(",");
+                json.append("[");
+                for (int col = 0; col < 8; col++) {
+                    if (col > 0) json.append(",");
+                    json.append(pieceJson(positions.get(i)[row][col]));
+                }
+                json.append("]");
+            }
+            json.append("]");
+        }
+        json.append("],\"moves\":[");
+        List<Move> moves = gameManager.getMovesPlayed();
+        for (int i = 0; i < moves.size(); i++) {
+            if (i > 0) json.append(",");
+            Move m = moves.get(i);
+            json.append("{\"fromRow\":").append(m.getFrom().getRow()).append(",\"fromCol\":").append(m.getFrom().getColumn())
+                    .append(",\"toRow\":").append(m.getTo().getRow()).append(",\"toCol\":").append(m.getTo().getColumn()).append("}");
+        }
+        json.append("]}");
+        sendJson(exchange, 200, json.toString());
+    }
+
+    private Difficulty extractDifficulty(String body) {
+        if (body == null) return null;
+        int key = body.indexOf("\"difficulty\"");
+        if (key == -1) return null;
+        for (Difficulty candidate : Difficulty.values()) {
+            if (body.indexOf("\"" + candidate.name() + "\"", key) != -1) return candidate;
+        }
+        return null;
     }
 
     private void handleUndo(HttpExchange exchange) throws IOException {
@@ -114,7 +187,7 @@ public class ApiServer {
 
             // La IA solo responde si la partida sigue (no hubo mate ni tablas)
             if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK && !isGameOver()) {
-                Move aiMove = pickLegalAiMove();
+                Move aiMove = chooseAiMove();
                 if (aiMove != null) {
                     gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
                 }
@@ -141,28 +214,43 @@ public class ApiServer {
     }
 
     /**
-     * Elige la jugada de la IA entre las jugadas legales que da el GameManager
-     * (así incluye enroque, peón al paso y coronación): si puede comer, come;
-     * si no, juega una al azar.
+     * Elige la jugada de la computadora según el nivel:
+     * - FÁCIL: casi al azar (a veces come si puede).
+     * - MEDIO: mira su jugada y la respuesta del rival; evita regalar piezas, pero no siempre elige la mejor.
+     * - DIFÍCIL: calcula varias jugadas hacia adelante y elige la mejor.
      */
-    private Move pickLegalAiMove() {
-        List<Move> legalCaptures = new java.util.ArrayList<>();
-        List<Move> legalOthers = new java.util.ArrayList<>();
+    private Move chooseAiMove() {
+        switch (difficulty) {
+            case EASY:
+                return pickEasyMove();
+            case HARD:
+                return new MoveSearcher(gameManager, board).findBestMove(4, 2500, 0);
+            case MEDIUM:
+            default:
+                return new MoveSearcher(gameManager, board).findBestMove(2, 1500, 30);
+        }
+    }
 
+    private Move pickEasyMove() {
+        List<Move> captures = new java.util.ArrayList<>();
+        List<Move> others = new java.util.ArrayList<>();
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
                 Position from = new Position(r, c);
                 for (Position to : gameManager.getLegalMoves(from)) {
                     Move move = new Move(from, to);
-                    if (board.getPieceAt(to) != null) legalCaptures.add(move);
-                    else legalOthers.add(move);
+                    if (board.getPieceAt(to) != null) captures.add(move);
+                    else others.add(move);
                 }
             }
         }
-
-        if (!legalCaptures.isEmpty()) return legalCaptures.get(0);
-        if (!legalOthers.isEmpty()) return legalOthers.get(new java.util.Random().nextInt(legalOthers.size()));
-        return null;
+        List<Move> all = new java.util.ArrayList<>(captures);
+        all.addAll(others);
+        if (all.isEmpty()) return null;
+        if (!captures.isEmpty() && random.nextInt(100) < 40) {
+            return captures.get(random.nextInt(captures.size()));
+        }
+        return all.get(random.nextInt(all.size()));
     }
 
     private String buildStateJson() {
@@ -193,13 +281,34 @@ public class ApiServer {
 
         json.append("\"capturedWhite\":").append(capturedJson(Color.WHITE)).append(",");
         json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK)).append(",");
+        json.append("\"difficulty\":\"").append(difficulty).append("\",");
         json.append("\"canUndo\":").append(gameManager.canUndo()).append(",");
+        json.append("\"history\":").append(historyJson()).append(",");
+        json.append("\"lastMove\":").append(lastMoveJson()).append(",");
         json.append("\"legalMoves\":").append(legalMovesJson(turn)).append(",");
         json.append("\"checkingPiecePositions\":").append(checkingPiecePositionsJson(turn)).append(",");
         json.append("\"kingInCheckPosition\":").append(inCheck ? kingInCheckPositionJson(turn) : "null");
 
         json.append("}");
         return json.toString();
+    }
+
+    private String historyJson() {
+        List<String> moves = gameManager.getMoveHistory();
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < moves.size(); i++) {
+            if (i > 0) json.append(",");
+            json.append("\"").append(moves.get(i)).append("\"");
+        }
+        json.append("]");
+        return json.toString();
+    }
+
+    private String lastMoveJson() {
+        Move last = gameManager.getLastMove();
+        if (last == null) return "null";
+        return "{\"fromRow\":" + last.getFrom().getRow() + ",\"fromCol\":" + last.getFrom().getColumn()
+                + ",\"toRow\":" + last.getTo().getRow() + ",\"toCol\":" + last.getTo().getColumn() + "}";
     }
 
     private String legalMovesJson(Color color) {
