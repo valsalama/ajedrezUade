@@ -17,8 +17,6 @@ public class Main {
         ConsoleRenderer renderer = new ConsoleRenderer();
         SoundPort sound = new AnimalCrossingSoundAdapter();
         AIStrategy ai = new MediumAIStrategy();
-        CheckDetector checkDetector = new CheckDetector();
-        CheckmateDetector checkmateDetector = new CheckmateDetector();
         Scanner scanner = new Scanner(System.in);
 
         System.out.println("=== TPO Ajedrez: Humano (Blancas, MAYÚSCULAS, abajo) vs IA (Negras, minúsculas, arriba) ===");
@@ -30,29 +28,7 @@ public class Main {
             System.out.println();
             renderer.render(board);
 
-            Color turn = gameManager.getCurrentTurn();
-            boolean inCheck = checkDetector.isInCheck(turn, board);
-            boolean hasLegalMove = checkmateDetector.hasAnyLegalMove(turn, board);
-
-            // A quien le toca jugar no le queda ningún movimiento legal:
-            // antes de este chequeo, si esto le pasaba a las Blancas el
-            // programa seguía pidiendo jugadas para siempre (cualquiera que
-            // se intentara era "inválida"), y si le pasaba a las Negras no
-            // se distinguía jaque mate de ahogado.
-            if (!hasLegalMove) {
-                String quien = (turn == Color.WHITE) ? "Blancas (vos)" : "Negras (la IA)";
-                if (inCheck) {
-                    System.out.println("¡Jaque mate! " + quien + " no tiene movimientos legales. Fin del juego.");
-                } else {
-                    System.out.println("Ahogado (tablas). " + quien + " no está en jaque pero no tiene ningún movimiento legal.");
-                }
-                gameRunning = false;
-                break;
-            } else if (inCheck) {
-                System.out.println("¡Jaque a " + (turn == Color.WHITE ? "Blancas" : "Negras") + "!");
-            }
-
-            if (turn == Color.WHITE) {
+            if (gameManager.getCurrentTurn() == Color.WHITE) {
                 System.out.print("\nTu turno (Blancas) > ");
                 String line = scanner.hasNextLine() ? scanner.nextLine().trim() : "salir";
                 if (line.equalsIgnoreCase("salir")) break;
@@ -75,7 +51,10 @@ public class Main {
                 }
             } else {
                 System.out.println("\nTurno de la IA (Negras)...");
-                playAiTurn(gameManager, board, ai, sound);
+                if (!playAiTurn(gameManager, board, ai, sound)) {
+                    System.out.println("La IA no tiene movimientos legales. ¡Fin del juego!");
+                    gameRunning = false;
+                }
             }
         }
         scanner.close();

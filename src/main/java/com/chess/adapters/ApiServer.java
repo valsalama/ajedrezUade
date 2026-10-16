@@ -37,7 +37,6 @@ import com.sun.net.httpserver.HttpServer;
  *   GET  /api/state          -> full board + turn + game state
  *   POST /api/move           -> body: {"fromRow":1,"fromCol":0,"toRow":3,"toCol":0}
  *   POST /api/reset          -> starts a new game
- *   POST /api/undo           -> deshace tu última jugada y la de la IA
  */
 public class ApiServer {
 
@@ -58,7 +57,6 @@ public class ApiServer {
         server.createContext("/api/state", this::handleState);
         server.createContext("/api/move", this::handleMove);
         server.createContext("/api/reset", this::handleReset);
-        server.createContext("/api/undo", this::handleUndo);
         server.setExecutor(null);
     }
 
@@ -84,26 +82,6 @@ public class ApiServer {
         sendJson(exchange, 200, buildStateJson());
     }
 
-    private void handleUndo(HttpExchange exchange) throws IOException {
-        if (withCors(exchange, "POST")) return;
-        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-            sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
-            return;
-        }
-
-        // Como la IA juega su jugada en el mismo request que la tuya, lo que
-        // el humano percibe como "una jugada atrás" son en realidad DOS
-        // movimientos guardados en el historial: el de la IA (el último) y
-        // el tuyo (el anterior a ese). Por eso se deshacen de a dos.
-        // gameManager.undoLastMove() ya no hace nada si el historial está
-        // vacío, así que esto es seguro incluso al principio de la partida
-        // o si la IA no llegó a mover (p. ej. porque tu jugada fue mate).
-        gameManager.undoLastMove();
-        gameManager.undoLastMove();
-
-        sendJson(exchange, 200, buildStateJson());
-    }
-
     private void handleMove(HttpExchange exchange) throws IOException {
         if (withCors(exchange, "POST")) return;
         if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
@@ -122,74 +100,21 @@ public class ApiServer {
 
         MoveResult result = gameManager.tryMove(from, to);
 
-        // Si tu jugada deja a la IA en jaque, se nota ACÁ, antes de que la IA
-        // responda. Si no se guarda ahora, se pierde: la IA contesta en el
-        // mismo request y el estado final que se manda de vuelta ya refleja
-        // su jugada (normalmente ya no muestra más jaque). Por eso se manda
-        // este dato aparte, para poder avisar "pusiste en jaque" en el
-        // frontend aunque el estado final ya haya cambiado.
-        boolean gaveCheck = result == MoveResult.SUCCESS
-                && gameManager.getCurrentTurn() == Color.BLACK
-                && checkDetector.isInCheck(Color.BLACK, board);
-
         // Si el movimiento humano (Blancas) salió bien, le toca a la IA (Negras).
         if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK) {
-            Move aiMove = pickLegalAiMove(Color.BLACK);
+            Move aiMove = aiStrategy.getNextMove(board, Color.BLACK);
             if (aiMove != null) {
                 gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
             }
-            // Si aiMove es null, no hay movimientos legales para Negras: es jaque mate
-            // o ahogado, y buildStateJson() ya lo refleja a través de checkmateDetector.
         }
 
         StringBuilder json = new StringBuilder();
         json.append("{");
         json.append("\"result\":\"").append(result).append("\",");
-        json.append("\"gaveCheck\":").append(gaveCheck).append(",");
         json.append("\"state\":").append(buildStateJson());
         json.append("}");
 
         sendJson(exchange, 200, json.toString());
-    }
-
-    /**
-     * Elige un movimiento para la IA que además de ser válido para la pieza,
-     * no deje a su propio rey en jaque. EasyAIStrategy/MediumAIStrategy no
-     * chequean esto (solo miran cómo se mueve cada pieza), así que ese filtro
-     * de legalidad real se hace acá, igual que GameManager lo hace para el humano.
-     * Si hay capturas legales se prioriza una de ellas (onda MediumAIStrategy);
-     * si no, cualquier otro movimiento legal al azar. Null = no hay movimientos
-     * legales (jaque mate o ahogado).
-     */
-    private Move pickLegalAiMove(Color color) {
-        List<Move> legalCaptures = new java.util.ArrayList<>();
-        List<Move> legalOthers = new java.util.ArrayList<>();
-
-        for (int r = 0; r < 8; r++) {
-            for (int c = 0; c < 8; c++) {
-                Position from = new Position(r, c);
-                Piece piece = board.getPieceAt(from);
-                if (piece == null || piece.getColor() != color) continue;
-
-                for (Position to : piece.getPossibleMoves(board)) {
-                    ChessBoard clone = board.clone();
-                    Piece clonedPiece = clone.getPieceAt(from);
-                    boolean wasCapture = !clone.isEmpty(to);
-                    clone.removePiece(from);
-                    clone.placePiece(clonedPiece, to);
-
-                    if (!checkDetector.isInCheck(color, clone)) {
-                        Move move = new Move(from, to);
-                        if (wasCapture) legalCaptures.add(move);
-                        else legalOthers.add(move);
-                    }
-                }
-            }
-        }
-
-        if (!legalCaptures.isEmpty()) return legalCaptures.get(0);
-        if (!legalOthers.isEmpty()) return legalOthers.get(new java.util.Random().nextInt(legalOthers.size()));
-        return null;
     }
 
     // ---------- JSON building ----------
@@ -200,20 +125,11 @@ public class ApiServer {
 
         Color turn = gameManager.getCurrentTurn();
         boolean inCheck = checkDetector.isInCheck(turn, board);
-        boolean hasLegalMove = checkmateDetector.hasAnyLegalMove(turn, board);
+        boolean isCheckmate = inCheck && checkmateDetector.isCheckmate(turn, board);
 
-        // A quien le toca jugar (turn) no tiene NINGÚN movimiento legal:
-        // si está en jaque es jaque mate, si no, es ahogado (tablas).
-        GameState state;
-        if (inCheck && !hasLegalMove) {
-            state = GameState.CHECKMATE;
-        } else if (!inCheck && !hasLegalMove) {
-            state = GameState.DRAW;
-        } else if (inCheck) {
-            state = GameState.CHECK;
-        } else {
-            state = GameState.IN_PROGRESS;
-        }
+        GameState state = isCheckmate ? GameState.CHECKMATE
+                : inCheck ? GameState.CHECK
+                : GameState.IN_PROGRESS;
 
         json.append("\"turn\":\"").append(turn).append("\",");
         json.append("\"gameState\":\"").append(state).append("\",");
@@ -232,16 +148,79 @@ public class ApiServer {
         json.append("],");
 
         json.append("\"capturedWhite\":").append(capturedJson(Color.WHITE)).append(",");
-        json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK));
+        json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK)).append(",");
+        json.append("\"legalMoves\":").append(legalMovesJson(turn)).append(",");
+        json.append("\"checkingPiecePositions\":").append(checkingPiecePositionsJson(turn)).append(",");
+        json.append("\"kingInCheckPosition\":").append(kingInCheckPositionJson(turn));
 
         json.append("}");
         return json.toString();
     }
 
+    private String legalMovesJson(Color color) {
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Position from = new Position(row, col);
+                for (Position to : gameManager.getLegalMoves(from)) {
+                    if (!first) json.append(",");
+                    json.append("{\"fromRow\":").append(row)
+                            .append(",\"fromCol\":").append(col)
+                            .append(",\"toRow\":").append(to.getRow())
+                            .append(",\"toCol\":").append(to.getColumn()).append("}");
+                    first = false;
+                }
+            }
+        }
+        json.append("]");
+        return json.toString();
+    }
+
+    private String checkingPiecePositionsJson(Color color) {
+        Position king = findKing(color);
+        if (king == null) return "[]";
+
+        Color opponent = color == Color.WHITE ? Color.BLACK : Color.WHITE;
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Piece piece = board.getPieceAt(new Position(row, col));
+                if (piece != null && piece.getColor() == opponent
+                        && piece.getPossibleMoves(board).stream()
+                                .anyMatch(move -> move.equals(king))) {
+                    if (!first) json.append(",");
+                    json.append("\"").append(row).append("-").append(col).append("\"");
+                    first = false;
+                }
+            }
+        }
+        json.append("]");
+        return json.toString();
+    }
+
+    private String kingInCheckPositionJson(Color color) {
+        Position king = findKing(color);
+        return king == null ? "null"
+                : "{\"row\":" + king.getRow() + ",\"col\":" + king.getColumn() + "}";
+    }
+
+    private Position findKing(Color color) {
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Piece piece = board.getPieceAt(new Position(row, col));
+                if (piece != null && piece.getColor() == color && piece.getType() == com.chess.core.PieceType.KING) {
+                    return new Position(row, col);
+                }
+            }
+        }
+        return null;
+    }
+
     private String pieceJson(Piece piece) {
         if (piece == null) return "null";
-        return "{\"id\":\"" + piece.getId() + "\",\"type\":\"" + piece.getType()
-                + "\",\"color\":\"" + piece.getColor() + "\"}";
+        return "{\"type\":\"" + piece.getType() + "\",\"color\":\"" + piece.getColor() + "\"}";
     }
 
     private String capturedJson(Color color) {
@@ -249,7 +228,7 @@ public class ApiServer {
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i < captured.size(); i++) {
             if (i > 0) json.append(",");
-            json.append(pieceJson(captured.get(i)));
+            json.append("\"").append(captured.get(i).getType()).append("\"");
         }
         json.append("]");
         return json.toString();
