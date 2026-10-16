@@ -1,9 +1,10 @@
 package com.chess.core;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -76,5 +77,63 @@ public class GameManagerTest {
 
         MoveResult result = gameManager.tryCastle(new Position(7, 4), new Position(7, 7));
         assertEquals(MoveResult.SUCCESS, result);
+    }
+
+    @Test
+    public void testUndoRestoresBoardTurnAndCapture() {
+        Piece whitePawn = new Pawn(Color.WHITE, new Position(1, 0));
+        Piece blackPawn = new Pawn(Color.BLACK, new Position(2, 1));
+        board.placePiece(whitePawn, new Position(1, 0));
+        board.placePiece(blackPawn, new Position(2, 1));
+
+        gameManager.tryMove(new Position(1, 0), new Position(2, 1));
+        gameManager.undoLastMove();
+
+        // Todo vuelve a como estaba: las dos piezas en su lugar, turno de blancas y sin capturas
+        assertEquals(whitePawn, board.getPieceAt(new Position(1, 0)));
+        assertEquals(blackPawn, board.getPieceAt(new Position(2, 1)));
+        assertEquals(Color.WHITE, gameManager.getCurrentTurn());
+        assertEquals(0, gameManager.getCapturedPieces(Color.WHITE).size());
+        assertFalse(gameManager.canUndo());
+    }
+
+    @Test
+    public void testPawnCanDoubleStepAgainAfterUndo() {
+        board.placePiece(new Pawn(Color.WHITE, new Position(1, 1)), new Position(1, 1));
+
+        gameManager.tryMove(new Position(1, 1), new Position(2, 1));
+        gameManager.undoLastMove();
+
+        // Si no se restaurara hasMoved, el peón ya no podría avanzar dos casillas
+        assertEquals(MoveResult.SUCCESS, gameManager.tryMove(new Position(1, 1), new Position(3, 1)));
+    }
+
+    @Test
+    public void testUndoCastleMovesKingAndRookBack() {
+        Piece king = new King(Color.WHITE, new Position(7, 4));
+        Piece rook = new Rook(Color.WHITE, new Position(7, 7));
+        board.placePiece(king, new Position(7, 4));
+        board.placePiece(rook, new Position(7, 7));
+
+        gameManager.tryCastle(new Position(7, 4), new Position(7, 7));
+        gameManager.undoLastMove();
+
+        assertEquals(king, board.getPieceAt(new Position(7, 4)));
+        assertEquals(rook, board.getPieceAt(new Position(7, 7)));
+        assertFalse(king.hasMoved());
+        assertFalse(rook.hasMoved());
+    }
+
+    @Test
+    public void testResetClearsTurnCapturesAndHistory() {
+        board.placePiece(new Pawn(Color.WHITE, new Position(1, 0)), new Position(1, 0));
+        board.placePiece(new Pawn(Color.BLACK, new Position(2, 1)), new Position(2, 1));
+        gameManager.tryMove(new Position(1, 0), new Position(2, 1));
+
+        gameManager.reset();
+
+        assertEquals(Color.WHITE, gameManager.getCurrentTurn());
+        assertEquals(0, gameManager.getCapturedPieces(Color.WHITE).size());
+        assertFalse(gameManager.canUndo());
     }
 }
