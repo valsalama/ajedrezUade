@@ -77,7 +77,6 @@ public class ApiServer {
         }
 
         gameManager.undoLastMove();
-        gameManager.undoLastMove();
 
         sendJson(exchange, 200, buildStateJson());
     }
@@ -189,6 +188,7 @@ public class ApiServer {
 
         json.append("\"capturedWhite\":").append(capturedJson(Color.WHITE)).append(",");
         json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK)).append(",");
+        json.append("\"canUndo\":").append(gameManager.canUndo()).append(",");
         json.append("\"legalMoves\":").append(legalMovesJson(turn)).append(",");
         json.append("\"checkingPiecePositions\":").append(checkingPiecePositionsJson(turn)).append(",");
         json.append("\"kingInCheckPosition\":").append(inCheck ? kingInCheckPositionJson(turn) : "null");

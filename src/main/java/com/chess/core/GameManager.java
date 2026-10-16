@@ -16,6 +16,7 @@ public class GameManager {
     private MoveValidator moveValidator;
     private Deque<Command> history;
     private Map<Color, List<Piece>> capturedPieces; // Añadido para los tests de AgosL
+    private boolean undoAvailable;
 
     public GameManager(ChessBoard board) {
         this.board = board;
@@ -26,6 +27,7 @@ public class GameManager {
         this.capturedPieces = new HashMap<>();
         this.capturedPieces.put(Color.WHITE, new ArrayList<>());
         this.capturedPieces.put(Color.BLACK, new ArrayList<>());
+        this.undoAvailable = false;
     }
 
     public Color getCurrentTurn() { return currentTurn; }
@@ -69,6 +71,7 @@ public class GameManager {
         MoveCommand command = new MoveCommand(board, from, to, piece, targetPiece);
         command.execute();
         history.push(command);
+        undoAvailable = true;
 
         currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
         return MoveResult.SUCCESS;
@@ -111,20 +114,22 @@ public class GameManager {
             @Override public void execute() { kingMove.execute(); rookMove.execute(); }
             @Override public void undo() { rookMove.undo(); kingMove.undo(); }
         });
+        undoAvailable = true;
 
         currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
         return MoveResult.SUCCESS;
     }
 
     public boolean canUndo() {
-        return !history.isEmpty();
+        return undoAvailable && !history.isEmpty();
     }
 
     public void undoLastMove() {
-        if (!history.isEmpty()) {
+        if (canUndo()) {
             Command lastCommand = history.pop();
             lastCommand.undo();
             currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
+            undoAvailable = false;
 
             // Si ese movimiento había comido una pieza, la sacamos de la lista
             // de capturadas del jugador que la había comido (el del turno actual)
@@ -139,6 +144,7 @@ public class GameManager {
     public void reset() {
         currentTurn = Color.WHITE;
         history.clear();
+        undoAvailable = false;
         capturedPieces.get(Color.WHITE).clear();
         capturedPieces.get(Color.BLACK).clear();
     }
