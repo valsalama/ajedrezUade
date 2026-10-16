@@ -27,17 +27,6 @@ import com.chess.ports.ChessBoard;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
-/**
- * Web adapter: exposes the chess engine over a small REST API so an
- * external frontend (React, plain JS, whatever) can play against it.
- * No external dependencies: uses the JDK's built-in HttpServer and a
- * tiny hand-rolled JSON writer, so it only needs the JDK to run.
- *
- * Endpoints:
- *   GET  /api/state          -> full board + turn + game state
- *   POST /api/move           -> body: {"fromRow":1,"fromCol":0,"toRow":3,"toCol":0}
- *   POST /api/reset          -> starts a new game
- */
 public class ApiServer {
 
     private final GameManager gameManager;
@@ -47,7 +36,6 @@ public class ApiServer {
     private final CheckmateDetector checkmateDetector = new CheckmateDetector();
     private final HttpServer server;
 
-    /** Humano siempre juega Blancas; la IA pasada acá juega Negras, igual que en Main.java. */
     public ApiServer(GameManager gameManager, ChessBoard board, AIStrategy aiStrategy, int port) throws IOException {
         this.gameManager = gameManager;
         this.board = board;
@@ -57,6 +45,7 @@ public class ApiServer {
         server.createContext("/api/state", this::handleState);
         server.createContext("/api/move", this::handleMove);
         server.createContext("/api/reset", this::handleReset);
+        server.createContext("/api/undo", this::handleUndo);
         server.setExecutor(null);
     }
 
@@ -64,8 +53,6 @@ public class ApiServer {
         server.start();
         System.out.println("API de ajedrez escuchando en http://localhost:" + server.getAddress().getPort());
     }
-
-    // ---------- handlers ----------
 
     private void handleState(HttpExchange exchange) throws IOException {
         if (withCors(exchange, "GET")) return;
@@ -79,6 +66,19 @@ public class ApiServer {
             return;
         }
         resetBoard();
+        sendJson(exchange, 200, buildStateJson());
+    }
+
+    private void handleUndo(HttpExchange exchange) throws IOException {
+        if (withCors(exchange, "POST")) return;
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
+            return;
+        }
+
+        gameManager.undoLastMove();
+        gameManager.undoLastMove();
+
         sendJson(exchange, 200, buildStateJson());
     }
 
@@ -100,9 +100,12 @@ public class ApiServer {
 
         MoveResult result = gameManager.tryMove(from, to);
 
-        // Si el movimiento humano (Blancas) salió bien, le toca a la IA (Negras).
+        boolean gaveCheck = result == MoveResult.SUCCESS
+                && gameManager.getCurrentTurn() == Color.BLACK
+                && checkDetector.isInCheck(Color.BLACK, board);
+
         if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK) {
-            Move aiMove = aiStrategy.getNextMove(board, Color.BLACK);
+            Move aiMove = pickLegalAiMove(Color.BLACK);
             if (aiMove != null) {
                 gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
             }
@@ -111,13 +114,43 @@ public class ApiServer {
         StringBuilder json = new StringBuilder();
         json.append("{");
         json.append("\"result\":\"").append(result).append("\",");
+        json.append("\"gaveCheck\":").append(gaveCheck).append(",");
         json.append("\"state\":").append(buildStateJson());
         json.append("}");
 
         sendJson(exchange, 200, json.toString());
     }
 
-    // ---------- JSON building ----------
+    private Move pickLegalAiMove(Color color) {
+        List<Move> legalCaptures = new java.util.ArrayList<>();
+        List<Move> legalOthers = new java.util.ArrayList<>();
+
+        for (int r = 0; r < 8; r++) {
+            for (int c = 0; c < 8; c++) {
+                Position from = new Position(r, c);
+                Piece piece = board.getPieceAt(from);
+                if (piece == null || piece.getColor() != color) continue;
+
+                for (Position to : piece.getPossibleMoves(board)) {
+                    ChessBoard clone = board.clone();
+                    Piece clonedPiece = clone.getPieceAt(from);
+                    boolean wasCapture = !clone.isEmpty(to);
+                    clone.removePiece(from);
+                    clone.placePiece(clonedPiece, to);
+
+                    if (!checkDetector.isInCheck(color, clone)) {
+                        Move move = new Move(from, to);
+                        if (wasCapture) legalCaptures.add(move);
+                        else legalOthers.add(move);
+                    }
+                }
+            }
+        }
+
+        if (!legalCaptures.isEmpty()) return legalCaptures.get(0);
+        if (!legalOthers.isEmpty()) return legalOthers.get(new java.util.Random().nextInt(legalOthers.size()));
+        return null;
+    }
 
     private String buildStateJson() {
         StringBuilder json = new StringBuilder();
@@ -125,11 +158,18 @@ public class ApiServer {
 
         Color turn = gameManager.getCurrentTurn();
         boolean inCheck = checkDetector.isInCheck(turn, board);
-        boolean isCheckmate = inCheck && checkmateDetector.isCheckmate(turn, board);
+        boolean hasLegalMove = checkmateDetector.hasAnyLegalMove(turn, board);
 
-        GameState state = isCheckmate ? GameState.CHECKMATE
-                : inCheck ? GameState.CHECK
-                : GameState.IN_PROGRESS;
+        GameState state;
+        if (inCheck && !hasLegalMove) {
+            state = GameState.CHECKMATE;
+        } else if (!inCheck && !hasLegalMove) {
+            state = GameState.DRAW;
+        } else if (inCheck) {
+            state = GameState.CHECK;
+        } else {
+            state = GameState.IN_PROGRESS;
+        }
 
         json.append("\"turn\":\"").append(turn).append("\",");
         json.append("\"gameState\":\"").append(state).append("\",");
@@ -151,7 +191,7 @@ public class ApiServer {
         json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK)).append(",");
         json.append("\"legalMoves\":").append(legalMovesJson(turn)).append(",");
         json.append("\"checkingPiecePositions\":").append(checkingPiecePositionsJson(turn)).append(",");
-        json.append("\"kingInCheckPosition\":").append(kingInCheckPositionJson(turn));
+        json.append("\"kingInCheckPosition\":").append(inCheck ? kingInCheckPositionJson(turn) : "null");
 
         json.append("}");
         return json.toString();
@@ -220,7 +260,8 @@ public class ApiServer {
 
     private String pieceJson(Piece piece) {
         if (piece == null) return "null";
-        return "{\"type\":\"" + piece.getType() + "\",\"color\":\"" + piece.getColor() + "\"}";
+        return "{\"id\":\"" + piece.getId() + "\",\"type\":\"" + piece.getType()
+                + "\",\"color\":\"" + piece.getColor() + "\"}";
     }
 
     private String capturedJson(Color color) {
@@ -228,7 +269,7 @@ public class ApiServer {
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i < captured.size(); i++) {
             if (i > 0) json.append(",");
-            json.append("\"").append(captured.get(i).getType()).append("\"");
+            json.append(pieceJson(captured.get(i)));
         }
         json.append("]");
         return json.toString();
@@ -241,6 +282,7 @@ public class ApiServer {
             }
         }
         placeInitialPieces();
+        gameManager.reset();
     }
 
     private void placeInitialPieces() {
@@ -268,9 +310,6 @@ public class ApiServer {
     private Position p(int r, int c) { return new Position(r, c); }
     private void place(Piece piece, int r, int c) { board.placePiece(piece, new Position(r, c)); }
 
-    // ---------- small HTTP helpers ----------
-
-    /** Adds CORS headers and answers OPTIONS preflight. Returns true if the exchange was already handled. */
     private boolean withCors(HttpExchange exchange, String allowedMethod) throws IOException {
         exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().add("Access-Control-Allow-Methods", allowedMethod + ", OPTIONS");
@@ -301,7 +340,6 @@ public class ApiServer {
         }
     }
 
-    /** Minimal number extractor for flat JSON bodies like {"fromRow":1,"fromCol":0}. Good enough for this API's needs. */
     private int extractInt(String json, String key) {
         String marker = "\"" + key + "\"";
         int keyIndex = json.indexOf(marker);
