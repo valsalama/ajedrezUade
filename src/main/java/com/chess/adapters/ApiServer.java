@@ -10,8 +10,8 @@ import java.util.List;
 
 import com.chess.core.Bishop;
 import com.chess.core.CheckDetector;
-import com.chess.core.CheckmateDetector;
 import com.chess.core.Color;
+import com.chess.core.DrawReason;
 import com.chess.core.GameManager;
 import com.chess.core.GameState;
 import com.chess.core.King;
@@ -33,8 +33,8 @@ public class ApiServer {
     private final ChessBoard board;
     private final AIStrategy aiStrategy;
     private final CheckDetector checkDetector = new CheckDetector();
-    private final CheckmateDetector checkmateDetector = new CheckmateDetector();
     private final HttpServer server;
+    private static final Color HUMAN_COLOR = Color.WHITE;
 
     public ApiServer(GameManager gameManager, ChessBoard board, AIStrategy aiStrategy, int port) throws IOException {
         this.gameManager = gameManager;
@@ -76,7 +76,9 @@ public class ApiServer {
             return;
         }
 
-        gameManager.undoLastMove();
+        // Una sola vuelta atrás por click: la respuesta de la IA y la jugada
+        // tuya que la provocó (o solo la tuya si la IA no llegó a responder).
+        gameManager.undoLastRound(HUMAN_COLOR);
 
         sendJson(exchange, 200, buildStateJson());
     }
@@ -94,19 +96,28 @@ public class ApiServer {
         int toRow = extractInt(body, "toRow");
         int toCol = extractInt(body, "toCol");
 
-        Position from = new Position(fromRow, fromCol);
-        Position to = new Position(toRow, toCol);
+        MoveResult result;
+        boolean gaveCheck = false;
 
-        MoveResult result = gameManager.tryMove(from, to);
+        if (!inBounds(fromRow, fromCol) || !inBounds(toRow, toCol)) {
+            // Coordenadas faltantes o fuera del tablero: se rechaza sin tocar el juego
+            result = MoveResult.INVALID_MOVE;
+        } else {
+            Position from = new Position(fromRow, fromCol);
+            Position to = new Position(toRow, toCol);
 
-        boolean gaveCheck = result == MoveResult.SUCCESS
-                && gameManager.getCurrentTurn() == Color.BLACK
-                && checkDetector.isInCheck(Color.BLACK, board);
+            result = gameManager.tryMove(from, to);
 
-        if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK) {
-            Move aiMove = pickLegalAiMove(Color.BLACK);
-            if (aiMove != null) {
-                gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
+            gaveCheck = result == MoveResult.SUCCESS
+                    && gameManager.getCurrentTurn() == Color.BLACK
+                    && checkDetector.isInCheck(Color.BLACK, board);
+
+            // La IA solo responde si la partida sigue (no hubo mate ni tablas)
+            if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK && !isGameOver()) {
+                Move aiMove = pickLegalAiMove();
+                if (aiMove != null) {
+                    gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
+                }
             }
         }
 
@@ -120,28 +131,31 @@ public class ApiServer {
         sendJson(exchange, 200, json.toString());
     }
 
-    private Move pickLegalAiMove(Color color) {
+    private boolean inBounds(int row, int col) {
+        return row >= 0 && row < 8 && col >= 0 && col < 8;
+    }
+
+    private boolean isGameOver() {
+        GameState state = gameManager.getGameState();
+        return state == GameState.CHECKMATE || state == GameState.DRAW;
+    }
+
+    /**
+     * Elige la jugada de la IA entre las jugadas legales que da el GameManager
+     * (así incluye enroque, peón al paso y coronación): si puede comer, come;
+     * si no, juega una al azar.
+     */
+    private Move pickLegalAiMove() {
         List<Move> legalCaptures = new java.util.ArrayList<>();
         List<Move> legalOthers = new java.util.ArrayList<>();
 
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
                 Position from = new Position(r, c);
-                Piece piece = board.getPieceAt(from);
-                if (piece == null || piece.getColor() != color) continue;
-
-                for (Position to : piece.getPossibleMoves(board)) {
-                    ChessBoard clone = board.clone();
-                    Piece clonedPiece = clone.getPieceAt(from);
-                    boolean wasCapture = !clone.isEmpty(to);
-                    clone.removePiece(from);
-                    clone.placePiece(clonedPiece, to);
-
-                    if (!checkDetector.isInCheck(color, clone)) {
-                        Move move = new Move(from, to);
-                        if (wasCapture) legalCaptures.add(move);
-                        else legalOthers.add(move);
-                    }
+                for (Position to : gameManager.getLegalMoves(from)) {
+                    Move move = new Move(from, to);
+                    if (board.getPieceAt(to) != null) legalCaptures.add(move);
+                    else legalOthers.add(move);
                 }
             }
         }
@@ -157,21 +171,12 @@ public class ApiServer {
 
         Color turn = gameManager.getCurrentTurn();
         boolean inCheck = checkDetector.isInCheck(turn, board);
-        boolean hasLegalMove = checkmateDetector.hasAnyLegalMove(turn, board);
-
-        GameState state;
-        if (inCheck && !hasLegalMove) {
-            state = GameState.CHECKMATE;
-        } else if (!inCheck && !hasLegalMove) {
-            state = GameState.DRAW;
-        } else if (inCheck) {
-            state = GameState.CHECK;
-        } else {
-            state = GameState.IN_PROGRESS;
-        }
+        GameState state = gameManager.getGameState();
+        DrawReason drawReason = state == GameState.DRAW ? gameManager.getDrawReason() : DrawReason.NONE;
 
         json.append("\"turn\":\"").append(turn).append("\",");
         json.append("\"gameState\":\"").append(state).append("\",");
+        json.append("\"drawReason\":\"").append(drawReason).append("\",");
 
         json.append("\"board\":[");
         for (int row = 0; row < 8; row++) {
@@ -345,9 +350,15 @@ public class ApiServer {
         int keyIndex = json.indexOf(marker);
         if (keyIndex == -1) return -1;
         int colon = json.indexOf(":", keyIndex);
+        if (colon == -1) return -1;
         int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
         int end = start;
         while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-')) end++;
-        return Integer.parseInt(json.substring(start, end).trim());
+        try {
+            return Integer.parseInt(json.substring(start, end).trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 }
