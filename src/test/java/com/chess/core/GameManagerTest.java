@@ -1,6 +1,9 @@
 package com.chess.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +51,20 @@ public class GameManagerTest {
         board.placePiece(new Pawn(Color.WHITE, new Position(1, 1)), new Position(1, 1));
 
         assertEquals(MoveResult.SUCCESS, gameManager.tryMove(new Position(1, 1), new Position(3, 1)));
+    }
+
+    @Test
+    public void testLegalMovesExcludeMovesThatDoNotResolveCheck() {
+        board.placePiece(new King(Color.WHITE, new Position(4, 4)), new Position(4, 4));
+        board.placePiece(new Rook(Color.WHITE, new Position(0, 5)), new Position(0, 5));
+        board.placePiece(new Rook(Color.BLACK, new Position(4, 7)), new Position(4, 7));
+
+        List<Position> legalMoves = gameManager.getLegalMoves(new Position(0, 5));
+
+        assertFalse(legalMoves.contains(new Position(0, 6)));
+        assertTrue(legalMoves.contains(new Position(4, 5)));
+        assertEquals(MoveResult.INVALID_MOVE,
+                gameManager.tryMove(new Position(0, 5), new Position(0, 6)));
     }
 
     @Test

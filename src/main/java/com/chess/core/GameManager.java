@@ -33,18 +33,27 @@ public class GameManager {
         return capturedPieces.get(color); 
     }
 
+    public List<Position> getLegalMoves(Position from) {
+        Piece piece = board.getPieceAt(from);
+        if (piece == null || piece.getColor() != currentTurn) return new ArrayList<>();
+
+        List<Position> legalMoves = new ArrayList<>();
+        for (Position destination : piece.getPossibleMoves(board)) {
+            if (moveValidator.isValidMove(board, piece, destination)
+                    && !leavesKingInCheck(from, destination, currentTurn)) {
+                legalMoves.add(destination);
+            }
+        }
+        return legalMoves;
+    }
+
     public MoveResult tryMove(Position from, Position to) {
         Piece piece = board.getPieceAt(from);
         if (piece == null) return MoveResult.INVALID_MOVE;
         if (piece.getColor() != currentTurn) return MoveResult.NOT_YOUR_TURN;
         if (!moveValidator.isValidMove(board, piece, to)) return MoveResult.INVALID_MOVE;
 
-        ChessBoard clonedBoard = board.clone();
-        Piece clonedPiece = clonedBoard.getPieceAt(from);
-        clonedBoard.removePiece(from);
-        clonedBoard.placePiece(clonedPiece, to);
-
-        if (checkDetector.isInCheck(currentTurn, clonedBoard)) {
+        if (leavesKingInCheck(from, to, currentTurn)) {
             return MoveResult.INVALID_MOVE;
         }
 
@@ -60,6 +69,14 @@ public class GameManager {
         
         currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
         return MoveResult.SUCCESS;
+    }
+
+    private boolean leavesKingInCheck(Position from, Position to, Color color) {
+        ChessBoard clonedBoard = board.clone();
+        Piece clonedPiece = clonedBoard.getPieceAt(from);
+        clonedBoard.removePiece(from);
+        clonedBoard.placePiece(clonedPiece, to);
+        return checkDetector.isInCheck(color, clonedBoard);
     }
 
     public MoveResult tryCastle(Position kingFrom, Position rookFrom) {

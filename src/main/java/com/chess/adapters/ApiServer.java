@@ -148,10 +148,74 @@ public class ApiServer {
         json.append("],");
 
         json.append("\"capturedWhite\":").append(capturedJson(Color.WHITE)).append(",");
-        json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK));
+        json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK)).append(",");
+        json.append("\"legalMoves\":").append(legalMovesJson(turn)).append(",");
+        json.append("\"checkingPiecePositions\":").append(checkingPiecePositionsJson(turn)).append(",");
+        json.append("\"kingInCheckPosition\":").append(kingInCheckPositionJson(turn));
 
         json.append("}");
         return json.toString();
+    }
+
+    private String legalMovesJson(Color color) {
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Position from = new Position(row, col);
+                for (Position to : gameManager.getLegalMoves(from)) {
+                    if (!first) json.append(",");
+                    json.append("{\"fromRow\":").append(row)
+                            .append(",\"fromCol\":").append(col)
+                            .append(",\"toRow\":").append(to.getRow())
+                            .append(",\"toCol\":").append(to.getColumn()).append("}");
+                    first = false;
+                }
+            }
+        }
+        json.append("]");
+        return json.toString();
+    }
+
+    private String checkingPiecePositionsJson(Color color) {
+        Position king = findKing(color);
+        if (king == null) return "[]";
+
+        Color opponent = color == Color.WHITE ? Color.BLACK : Color.WHITE;
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Piece piece = board.getPieceAt(new Position(row, col));
+                if (piece != null && piece.getColor() == opponent
+                        && piece.getPossibleMoves(board).stream()
+                                .anyMatch(move -> move.equals(king))) {
+                    if (!first) json.append(",");
+                    json.append("\"").append(row).append("-").append(col).append("\"");
+                    first = false;
+                }
+            }
+        }
+        json.append("]");
+        return json.toString();
+    }
+
+    private String kingInCheckPositionJson(Color color) {
+        Position king = findKing(color);
+        return king == null ? "null"
+                : "{\"row\":" + king.getRow() + ",\"col\":" + king.getColumn() + "}";
+    }
+
+    private Position findKing(Color color) {
+        for (int row = 0; row < 8; row++) {
+            for (int col = 0; col < 8; col++) {
+                Piece piece = board.getPieceAt(new Position(row, col));
+                if (piece != null && piece.getColor() == color && piece.getType() == com.chess.core.PieceType.KING) {
+                    return new Position(row, col);
+                }
+            }
+        }
+        return null;
     }
 
     private String pieceJson(Piece piece) {
