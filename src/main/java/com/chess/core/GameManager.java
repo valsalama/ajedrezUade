@@ -134,6 +134,18 @@ public class GameManager {
     // ------------------------------------------------------------------
 
     public MoveResult tryMove(Position from, Position to) {
+        return tryMove(from, to, PieceType.QUEEN);
+    }
+
+    /**
+     * Igual que tryMove, pero indicando a qué pieza corona el peón si la jugada
+     * es una coronación (Dama, Torre, Alfil o Caballo). Para cualquier otra
+     * jugada el parámetro se ignora. Rey y Peón no son opciones válidas.
+     */
+    public MoveResult tryMove(Position from, Position to, PieceType promotion) {
+        if (promotion == null) promotion = PieceType.QUEEN;
+        if (!MoveCommand.isValidPromotionType(promotion)) return MoveResult.INVALID_MOVE;
+
         Piece piece = board.getPieceAt(from);
         if (piece == null) return MoveResult.INVALID_MOVE;
         if (piece.getColor() != currentTurn) return MoveResult.NOT_YOUR_TURN;
@@ -162,11 +174,11 @@ public class GameManager {
 
         // La notación se arma ANTES de mover (hace falta saber qué otras piezas
         // podían ir al mismo lugar); el "+" o "#" se agrega después, en finishMove
-        String notation = searchMode ? null : notationFor(piece, from, to, targetPiece != null);
+        String notation = searchMode ? null : notationFor(piece, from, to, targetPiece != null, promotion);
 
         // El movimiento se hace a través de un MoveCommand y se guarda en el
         // historial, así después se puede deshacer con undoLastMove()
-        MoveCommand command = new MoveCommand(board, from, to, piece, targetPiece);
+        MoveCommand command = new MoveCommand(board, from, to, piece, targetPiece, promotion);
         HistoryEntry entry = beginEntry(command, targetPiece, from, to);
         command.execute();
 
@@ -220,7 +232,7 @@ public class GameManager {
                 board.placePiece(victim, victimPos);
             }
         };
-        String notation = searchMode ? null : notationFor(pawn, from, to, true);
+        String notation = searchMode ? null : notationFor(pawn, from, to, true, PieceType.QUEEN);
         HistoryEntry entry = beginEntry(enPassant, victim, from, to);
         enPassant.execute();
         finishMove(entry, notation, true, null, null);
@@ -352,16 +364,16 @@ public class GameManager {
 
     /**
      * Notación algebraica de la jugada (sin el "+"/"#" final). Se calcula con el
-     * tablero ANTES de mover. Ejemplos: e4, Cf3, Txd1, Tad1, exd5, e8=D.
+     * tablero ANTES de mover. Ejemplos: e4, Cf3, Txd1, Tad1, exd5, e8=D, e8=C.
      */
-    private String notationFor(Piece piece, Position from, Position to, boolean capture) {
+    private String notationFor(Piece piece, Position from, Position to, boolean capture, PieceType promotion) {
         StringBuilder san = new StringBuilder();
 
         if (piece.getType() == PieceType.PAWN) {
             if (capture) san.append((char) ('a' + from.getColumn())).append('x');
             san.append(squareName(to));
             int lastRow = piece.getColor() == Color.WHITE ? 7 : 0;
-            if (to.getRow() == lastRow) san.append("=D"); // la coronación siempre es a Dama
+            if (to.getRow() == lastRow) san.append('=').append(pieceLetter(promotion)); // pieza elegida al coronar
             return san.toString();
         }
 

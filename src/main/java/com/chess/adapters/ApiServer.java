@@ -22,6 +22,7 @@ import com.chess.core.MoveResult;
 import com.chess.core.MoveSearcher;
 import com.chess.core.Pawn;
 import com.chess.core.Piece;
+import com.chess.core.PieceType;
 import com.chess.core.Position;
 import com.chess.core.Queen;
 import com.chess.core.Rook;
@@ -168,6 +169,8 @@ public class ApiServer {
         int fromCol = extractInt(body, "fromCol");
         int toRow = extractInt(body, "toRow");
         int toCol = extractInt(body, "toCol");
+        // Opcional: a qué pieza corona un peón (QUEEN, ROOK, BISHOP o KNIGHT). Sin este dato, corona a Dama.
+        String promotionName = extractString(body, "promotion");
 
         MoveResult result;
         boolean gaveCheck = false;
@@ -179,7 +182,17 @@ public class ApiServer {
             Position from = new Position(fromRow, fromCol);
             Position to = new Position(toRow, toCol);
 
-            result = gameManager.tryMove(from, to);
+            PieceType promotion = PieceType.QUEEN;
+            boolean promotionInvalid = false;
+            if (promotionName != null) {
+                try {
+                    promotion = PieceType.valueOf(promotionName);
+                } catch (IllegalArgumentException e) {
+                    promotionInvalid = true;
+                }
+            }
+
+            result = promotionInvalid ? MoveResult.INVALID_MOVE : gameManager.tryMove(from, to, promotion);
 
             gaveCheck = result == MoveResult.SUCCESS
                     && gameManager.getCurrentTurn() == Color.BLACK
@@ -452,6 +465,20 @@ public class ApiServer {
             while ((read = is.read(data)) != -1) buffer.write(data, 0, read);
             return buffer.toString(StandardCharsets.UTF_8);
         }
+    }
+
+    /** Valor de texto de una clave del JSON ("clave":"VALOR"), o null si no está. */
+    private String extractString(String json, String key) {
+        if (json == null) return null;
+        int keyIndex = json.indexOf("\"" + key + "\"");
+        if (keyIndex == -1) return null;
+        int colon = json.indexOf(":", keyIndex);
+        if (colon == -1) return null;
+        int open = json.indexOf("\"", colon);
+        if (open == -1) return null;
+        int close = json.indexOf("\"", open + 1);
+        if (close == -1) return null;
+        return json.substring(open + 1, close).trim().toUpperCase();
     }
 
     private int extractInt(String json, String key) {

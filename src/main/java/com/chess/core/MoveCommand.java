@@ -7,9 +7,16 @@ public class MoveCommand implements Command {
     private Position from, to;
     private Piece movedPiece, capturedPiece;
     private boolean movedPieceHadMoved;
-    private Piece promotedPiece; // la Dama que reemplaza al peón si corona (null si no corona)
+    private Piece promotedPiece; // la pieza que reemplaza al peón si corona (null si no corona)
+    private final PieceType promotionType; // a qué pieza corona: Dama, Torre, Alfil o Caballo
 
     public MoveCommand(ChessBoard board, Position from, Position to, Piece movedPiece, Piece capturedPiece) {
+        this(board, from, to, movedPiece, capturedPiece, PieceType.QUEEN);
+    }
+
+    public MoveCommand(ChessBoard board, Position from, Position to, Piece movedPiece, Piece capturedPiece,
+                       PieceType promotionType) {
+        this.promotionType = promotionType == null ? PieceType.QUEEN : promotionType;
         this.board = board;
         this.from = from;
         this.to = to;
@@ -25,11 +32,12 @@ public class MoveCommand implements Command {
         board.placePiece(movedPiece, to);
         movedPiece.setPosition(to);
 
-        // Coronación: un peón que llega al final del tablero se convierte en Dama.
-        // La Dama conserva el id del peón, así el frontend sabe que es "la misma"
-        // pieza que cambió de tipo y puede animar la coronación.
+        // Coronación: un peón que llega al final del tablero se convierte en la
+        // pieza elegida (Dama por defecto). La pieza nueva conserva el id del peón,
+        // así el frontend sabe que es "la misma" pieza que cambió de tipo y puede
+        // animar la coronación.
         if (isPromotion()) {
-            promotedPiece = new Queen(movedPiece.getColor(), to);
+            promotedPiece = createPromotedPiece();
             promotedPiece.setId(movedPiece.getId());
             promotedPiece.setPosition(to);
             board.placePiece(promotedPiece, to);
@@ -46,6 +54,22 @@ public class MoveCommand implements Command {
             board.placePiece(capturedPiece, to);
             capturedPiece.restore(to, capturedPiece.hasMoved());
         }
+    }
+
+    private Piece createPromotedPiece() {
+        Color color = movedPiece.getColor();
+        switch (promotionType) {
+            case ROOK:   return new Rook(color, to);
+            case BISHOP: return new Bishop(color, to);
+            case KNIGHT: return new Knight(color, to);
+            default:     return new Queen(color, to);
+        }
+    }
+
+    /** Piezas a las que puede coronar un peón: todas menos el Rey y el Peón. */
+    public static boolean isValidPromotionType(PieceType type) {
+        return type == PieceType.QUEEN || type == PieceType.ROOK
+                || type == PieceType.BISHOP || type == PieceType.KNIGHT;
     }
 
     private boolean isPromotion() {
