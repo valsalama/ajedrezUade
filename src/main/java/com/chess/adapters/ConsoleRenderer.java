@@ -16,9 +16,7 @@ public class ConsoleRenderer {
                 if (p == null) {
                     System.out.print("[ ]");
                 } else {
-                    // Caballo = N (para no confundirlo con el Rey = K)
                     char letter = (p.getType() == PieceType.KNIGHT) ? 'N' : p.getType().name().charAt(0);
-                    // Blancas en mayúscula, negras en minúscula
                     letter = (p.getColor() == Color.WHITE) ? Character.toUpperCase(letter) : Character.toLowerCase(letter);
                     System.out.print("[" + letter + "]");
                 }

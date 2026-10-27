@@ -16,7 +16,6 @@ public class CheckDetectorTest {
         board.placePiece(whiteKing, new Position(0, 0));
         board.placePiece(blackRook, new Position(7, 0));
         
-        // Se espera que la torre negra en (7,0) amenace al rey blanco en (0,0)
         assertTrue(detector.isInCheck(Color.WHITE, board));
     }
 }

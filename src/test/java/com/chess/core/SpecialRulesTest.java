@@ -194,7 +194,6 @@ public class SpecialRulesTest {
         put(new King(Color.BLACK, p(7, 7)), 7, 7);
         put(new Rook(Color.WHITE, p(0, 5)), 0, 5);
 
-        // Se simula que ya pasaron 99 medias jugadas sin peones ni capturas
         java.lang.reflect.Field clock = GameManager.class.getDeclaredField("halfmoveClock");
         clock.setAccessible(true);
         clock.setInt(gm, 99);

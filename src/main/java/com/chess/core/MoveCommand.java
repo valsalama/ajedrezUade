@@ -7,8 +7,8 @@ public class MoveCommand implements Command {
     private Position from, to;
     private Piece movedPiece, capturedPiece;
     private boolean movedPieceHadMoved;
-    private Piece promotedPiece; // la pieza que reemplaza al peón si corona (null si no corona)
-    private final PieceType promotionType; // a qué pieza corona: Dama, Torre, Alfil o Caballo
+    private Piece promotedPiece; 
+    private final PieceType promotionType; 
 
     public MoveCommand(ChessBoard board, Position from, Position to, Piece movedPiece, Piece capturedPiece) {
         this(board, from, to, movedPiece, capturedPiece, PieceType.QUEEN);
@@ -26,16 +26,11 @@ public class MoveCommand implements Command {
 
     @Override 
     public void execute() {
-        // Se guarda antes de mover, para poder dejarlo igual al deshacer
         movedPieceHadMoved = movedPiece.hasMoved();
         board.removePiece(from);
         board.placePiece(movedPiece, to);
         movedPiece.setPosition(to);
 
-        // Coronación: un peón que llega al final del tablero se convierte en la
-        // pieza elegida (Dama por defecto). La pieza nueva conserva el id del peón,
-        // así el frontend sabe que es "la misma" pieza que cambió de tipo y puede
-        // animar la coronación.
         if (isPromotion()) {
             promotedPiece = createPromotedPiece();
             promotedPiece.setId(movedPiece.getId());
@@ -66,7 +61,6 @@ public class MoveCommand implements Command {
         }
     }
 
-    /** Piezas a las que puede coronar un peón: todas menos el Rey y el Peón. */
     public static boolean isValidPromotionType(PieceType type) {
         return type == PieceType.QUEEN || type == PieceType.ROOK
                 || type == PieceType.BISHOP || type == PieceType.KNIGHT;

@@ -1,6 +1,5 @@
 package com.chess.core;
 
-/** Motivo por el que una partida terminó en tablas (NONE si no hay tablas). */
 public enum DrawReason {
     NONE,
     STALEMATE,

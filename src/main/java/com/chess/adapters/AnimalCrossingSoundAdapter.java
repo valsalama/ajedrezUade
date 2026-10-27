@@ -7,7 +7,6 @@ import javax.sound.sampled.*;
 public class AnimalCrossingSoundAdapter implements SoundPort {
     private DialogBox dialogBox = new DialogBox();
 
-    // E2: Generador de tonos sintéticos mediante javax.sound.sampled para no depender de archivos .wav
     private void generateTone(int hz, int msecs) {
         try {
             float sampleRate = 8000f;

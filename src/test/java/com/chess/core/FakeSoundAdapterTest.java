@@ -14,7 +14,6 @@ public class FakeSoundAdapterTest {
         adapter.playMoveSound(PieceType.ROOK);
         adapter.playCaptureSound();
         
-        // Se espera que los contadores internos sumen las llamadas sin emitir sonido real
         assertEquals(2, adapter.moveSoundCalls);
         assertEquals(1, adapter.captureSoundCalls);
         assertEquals(0, adapter.checkmateJingleCalls);

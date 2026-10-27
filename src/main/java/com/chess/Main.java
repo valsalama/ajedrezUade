@@ -60,7 +60,6 @@ public class Main {
         scanner.close();
     }
 
-    /** Juega el turno de la IA. Si su jugada preferida es ilegal (deja al rey en jaque), prueba las demás. */
     private static boolean playAiTurn(GameManager gm, ChessBoard board, AIStrategy ai, SoundPort sound) {
         Move preferred = ai.getNextMove(board, Color.BLACK);
         if (preferred != null && gm.tryMove(preferred.getFrom(), preferred.getTo()) == MoveResult.SUCCESS) {
@@ -90,7 +89,6 @@ public class Main {
         return moves;
     }
 
-    /** Devuelve {filaOrigen, colOrigen, filaDestino, colDestino} o null si la entrada no es válida. */
     private static int[] parseMove(String line) {
         String[] parts = line.split("\\s+");
         if (parts.length != 4) return null;
@@ -106,7 +104,6 @@ public class Main {
         return n;
     }
 
-    /** El sonido nunca debería tumbar el juego (por ejemplo, si no hay placa de audio). */
     private static void playMoveSound(SoundPort sound, Piece movedPiece) {
         try {
             if (movedPiece != null) sound.playMoveSound(movedPiece.getType());
@@ -115,7 +112,6 @@ public class Main {
         }
     }
 
-    /** Blancas abajo (fila 7 piezas, fila 6 peones). Negras arriba (fila 0 piezas, fila 1 peones). */
     private static void setupInitialPosition(ChessBoard board) {
         placeBackRank(board, Color.WHITE, 7);
         placeBackRank(board, Color.BLACK, 0);

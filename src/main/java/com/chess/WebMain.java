@@ -14,11 +14,6 @@ import com.chess.core.Queen;
 import com.chess.core.Rook;
 import com.chess.ports.ChessBoard;
 
-/**
- * Entry point for playing over HTTP instead of the console.
- * Keeps Main.java (console mode) untouched; this is just another
- * adapter on top of the same core/GameManager, same as ConsoleRenderer.
- */
 public class WebMain {
     public static void main(String[] args) throws Exception {
         ChessBoard board = new com.chess.core.ArrayChessBoard();

@@ -21,7 +21,6 @@ public class GameEngineIntegrationTest {
         Piece whitePawn = new Pawn(Color.WHITE, new Position(1, 0));
         board.placePiece(whitePawn, new Position(1, 0));
 
-        // Un paso adelante para las blancas (hacia filas más grandes, como en Main.java)
         MoveResult result = gameManager.tryMove(new Position(1, 0), new Position(2, 0));
         assertEquals(MoveResult.SUCCESS, result);
     }

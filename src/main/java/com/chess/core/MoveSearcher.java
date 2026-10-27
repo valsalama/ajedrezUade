@@ -7,13 +7,6 @@ import java.util.Random;
 
 import com.chess.ports.ChessBoard;
 
-/**
- * Motor de ajedrez de la computadora: busca la mejor jugada probando jugadas
- * y respuestas (minimax con poda alfa-beta) sobre el mismo GameManager, usando
- * su "modo búsqueda" para deshacer todo lo que prueba sin dejar rastro en la partida.
- *
- * Se usa también para dar pistas al jugador: busca la mejor jugada de quien tenga el turno.
- */
 public class MoveSearcher {
 
     private static final int MATE = 100_000;
@@ -72,8 +65,6 @@ public class MoveSearcher {
                 for (int i = 0; i < bestOrder.size(); i++) {
                     Move move = bestOrder.get(i);
                     gameManager.tryMove(move.getFrom(), move.getTo());
-                    // Con tolerancia hace falta el puntaje exacto de cada jugada (ventana completa);
-                    // sin tolerancia alcanza con saber cuál es la mejor y la poda trabaja a pleno.
                     int score = -negamax(depth - 1, -INFINITY, toleranceCp > 0 ? INFINITY : -alpha, 1);
                     gameManager.undoSearchMove();
                     if (timeUp) break;
@@ -83,7 +74,6 @@ public class MoveSearcher {
 
                 if (timeUp) break; // esta profundidad quedó a medias: se descarta y se queda la anterior
 
-                // La mejor jugada pasa al principio para que la próxima profundidad la pruebe primero
                 bestScores = scores;
                 List<Move> sorted = new ArrayList<>(bestOrder);
                 Integer[] index = new Integer[sorted.size()];
@@ -103,12 +93,9 @@ public class MoveSearcher {
             }
 
             if (bestScores == null) {
-                // No alcanzó el tiempo ni para la profundidad 1: se juega la mejor según el orden inicial
                 return bestOrder.get(0);
             }
 
-            // Sin tolerancia hay una sola jugada "mejor": la primera de la lista ordenada. (Con la poda, las
-            // jugadas peores quedan recortadas al puntaje de la mejor y no sirven para elegir entre ellas.)
             if (toleranceCp <= 0) return bestOrder.get(0);
 
             int best = bestScores[0];
@@ -122,16 +109,11 @@ public class MoveSearcher {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Búsqueda
-    // ------------------------------------------------------------------
-
     private int negamax(int depth, int alpha, int beta, int ply) {
         if (outOfTime()) return 0;
 
         List<Move> moves = generateMoves();
         if (moves.isEmpty()) {
-            // Sin jugadas: jaque mate (muy malo para quien tiene el turno) o ahogado (empate)
             return checkDetector.isInCheck(gameManager.getCurrentTurn(), board) ? -MATE + ply : 0;
         }
         if (depth <= 0) {
@@ -151,10 +133,6 @@ public class MoveSearcher {
         return alpha;
     }
 
-    /**
-     * Al llegar al final de la búsqueda sigue mirando solo las capturas hasta que la
-     * posición se "calma", para no quedarse a mitad de un intercambio de piezas.
-     */
     private int quiescence(List<Move> allMoves, int alpha, int beta, int ply, int extra) {
         int standPat = evaluate();
         if (standPat >= beta) return beta;
@@ -195,10 +173,6 @@ public class MoveSearcher {
         return timeUp;
     }
 
-    // ------------------------------------------------------------------
-    // Jugadas y orden
-    // ------------------------------------------------------------------
-
     private List<Move> generateMoves() {
         List<Move> moves = new ArrayList<>();
         for (int r = 0; r < 8; r++) {
@@ -212,7 +186,6 @@ public class MoveSearcher {
         return moves;
     }
 
-    /** Prueba primero las capturas de piezas valiosas con piezas baratas y las coronaciones, que suelen ser las mejores. */
     private void orderMoves(List<Move> moves) {
         moves.sort((a, b) -> Integer.compare(orderScore(b), orderScore(a)));
     }
@@ -226,9 +199,6 @@ public class MoveSearcher {
         return score;
     }
 
-    // ------------------------------------------------------------------
-    // Evaluación
-    // ------------------------------------------------------------------
 
     static int value(PieceType type) {
         switch (type) {
@@ -241,7 +211,6 @@ public class MoveSearcher {
         }
     }
 
-    /** Puntaje de la posición desde el punto de vista de quien tiene el turno (más alto = mejor para él). */
     private int evaluate() {
         boolean queensOnBoard = false;
         for (int r = 0; r < 8 && !queensOnBoard; r++) {
@@ -266,7 +235,6 @@ public class MoveSearcher {
         return gameManager.getCurrentTurn() == Color.WHITE ? white : -white;
     }
 
-    /** Pequeños bonos de posición: peones que avanzan, piezas hacia el centro, rey a resguardo (o activo en el final). */
     private int positional(Piece piece, int row, int col, boolean queensOnBoard) {
         int advance = piece.getColor() == Color.WHITE ? row : 7 - row; // cuántas filas avanzó (0 = su fila inicial)
         double centerDistance = Math.max(Math.abs(row - 3.5), Math.abs(col - 3.5)); // 0.5 en el centro, 3.5 en el borde
@@ -284,7 +252,6 @@ public class MoveSearcher {
             case ROOK:   return advance == 6 ? 15 : 0; // torre en la séptima fila
             case KING: {
                 if (queensOnBoard) {
-                    // Con damas en juego el rey está mejor escondido: se premia la fila inicial y los costados
                     int shelter = advance == 0 ? 20 : 0;
                     if (advance == 0 && (col <= 2 || col >= 6)) shelter += 15;
                     return shelter - (int) (centrality * 6);

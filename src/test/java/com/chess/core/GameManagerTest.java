@@ -22,14 +22,11 @@ public class GameManagerTest {
 
     @Test
     public void testTurnAlternationAndCapture() {
-        // Fila 1 (blancas) y fila 2 (negras): el layout real de Main.java/WebMain.java
-        // tiene a blancas arrancando en las filas 0-1, avanzando hacia filas más grandes.
         Piece whitePawn = new Pawn(Color.WHITE, new Position(1, 0));
         Piece blackPawn = new Pawn(Color.BLACK, new Position(2, 1));
         board.placePiece(whitePawn, new Position(1, 0));
         board.placePiece(blackPawn, new Position(2, 1));
 
-        // Blancas mueven en diagonal y comen el peón negro; cambia el turno y se registra la captura
         MoveResult result = gameManager.tryMove(new Position(1, 0), new Position(2, 1));
 
         assertEquals(MoveResult.SUCCESS, result);
@@ -89,7 +86,6 @@ public class GameManagerTest {
         gameManager.tryMove(new Position(1, 0), new Position(2, 1));
         gameManager.undoLastMove();
 
-        // Todo vuelve a como estaba: las dos piezas en su lugar, turno de blancas y sin capturas
         assertEquals(whitePawn, board.getPieceAt(new Position(1, 0)));
         assertEquals(blackPawn, board.getPieceAt(new Position(2, 1)));
         assertEquals(Color.WHITE, gameManager.getCurrentTurn());
@@ -104,7 +100,6 @@ public class GameManagerTest {
         gameManager.tryMove(new Position(1, 1), new Position(2, 1));
         gameManager.undoLastMove();
 
-        // Si no se restaurara hasMoved, el peón ya no podría avanzar dos casillas
         assertEquals(MoveResult.SUCCESS, gameManager.tryMove(new Position(1, 1), new Position(3, 1)));
     }
 

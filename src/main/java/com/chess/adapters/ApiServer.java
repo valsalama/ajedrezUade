@@ -73,7 +73,6 @@ public class ApiServer {
             sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
             return;
         }
-        // El body es opcional: {"difficulty":"EASY" | "MEDIUM" | "HARD"}. Sin body se mantiene el nivel actual.
         String body = readBody(exchange);
         Difficulty requested = extractDifficulty(body);
         if (requested != null) difficulty = requested;
@@ -82,7 +81,6 @@ public class ApiServer {
         sendJson(exchange, 200, buildStateJson());
     }
 
-    /** Pista: la mejor jugada que encuentra el motor para quien tiene el turno (si es el jugador y la partida sigue). */
     private void handleHint(HttpExchange exchange) throws IOException {
         if (withCors(exchange, "GET")) return;
 
@@ -97,11 +95,6 @@ public class ApiServer {
         sendJson(exchange, 200, json);
     }
 
-    /**
-     * El tablero en cada momento de la partida para poder navegar el historial:
-     * "boards"[0] es la posición inicial y "boards"[n] la que quedó tras la jugada n;
-     * "moves"[n-1] es el origen y destino de esa jugada.
-     */
     private void handlePositions(HttpExchange exchange) throws IOException {
         if (withCors(exchange, "GET")) return;
 
@@ -150,8 +143,6 @@ public class ApiServer {
             return;
         }
 
-        // Una sola vuelta atrás por click: la respuesta de la IA y la jugada
-        // tuya que la provocó (o solo la tuya si la IA no llegó a responder).
         gameManager.undoLastRound(HUMAN_COLOR);
 
         sendJson(exchange, 200, buildStateJson());
@@ -169,14 +160,12 @@ public class ApiServer {
         int fromCol = extractInt(body, "fromCol");
         int toRow = extractInt(body, "toRow");
         int toCol = extractInt(body, "toCol");
-        // Opcional: a qué pieza corona un peón (QUEEN, ROOK, BISHOP o KNIGHT). Sin este dato, corona a Dama.
         String promotionName = extractString(body, "promotion");
 
         MoveResult result;
         boolean gaveCheck = false;
 
         if (!inBounds(fromRow, fromCol) || !inBounds(toRow, toCol)) {
-            // Coordenadas faltantes o fuera del tablero: se rechaza sin tocar el juego
             result = MoveResult.INVALID_MOVE;
         } else {
             Position from = new Position(fromRow, fromCol);
@@ -198,7 +187,6 @@ public class ApiServer {
                     && gameManager.getCurrentTurn() == Color.BLACK
                     && checkDetector.isInCheck(Color.BLACK, board);
 
-            // La IA solo responde si la partida sigue (no hubo mate ni tablas)
             if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK && !isGameOver()) {
                 Move aiMove = chooseAiMove();
                 if (aiMove != null) {
@@ -225,13 +213,7 @@ public class ApiServer {
         GameState state = gameManager.getGameState();
         return state == GameState.CHECKMATE || state == GameState.DRAW;
     }
-
-    /**
-     * Elige la jugada de la computadora según el nivel:
-     * - FÁCIL: casi al azar (a veces come si puede).
-     * - MEDIO: mira su jugada y la respuesta del rival; evita regalar piezas, pero no siempre elige la mejor.
-     * - DIFÍCIL: calcula varias jugadas hacia adelante y elige la mejor.
-     */
+    
     private Move chooseAiMove() {
         switch (difficulty) {
             case EASY:

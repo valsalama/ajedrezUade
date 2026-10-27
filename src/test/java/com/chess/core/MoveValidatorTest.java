@@ -17,7 +17,6 @@ public class MoveValidatorTest {
         board.placePiece(whiteRook, new Position(0,0));
         board.placePiece(whitePawn, new Position(0,1));
 
-        // Resultado esperado: Retorna falso porque no puede comer a su propia pieza
         assertFalse(validator.isValidMove(board, whiteRook, new Position(0,1)));
     }
 

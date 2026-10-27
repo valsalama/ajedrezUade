@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import com.chess.ports.ChessBoard;
 
-/** Elección de la pieza al coronar: Dama, Torre, Alfil o Caballo (nunca Rey ni Peón). */
 public class PromotionChoiceTest {
     private ChessBoard board;
     private GameManager gm;
@@ -26,7 +25,6 @@ public class PromotionChoiceTest {
 
     private Position p(int r, int c) { return new Position(r, c); }
 
-    /** Rey blanco en a1, rey negro en a7 y un peón blanco listo para coronar en f7 (sin dar jaque en f8). */
     private Piece setUpWhitePromotion() {
         put(new King(Color.WHITE, p(0, 0)), 0, 0);
         put(new King(Color.BLACK, p(6, 0)), 6, 0);
@@ -111,7 +109,6 @@ public class PromotionChoiceTest {
 
     @Test
     public void theChosenPieceDecidesWhetherItIsCheckmate() {
-        // En f8 la Dama da jaque mate al rey de h8; el Caballo, en cambio, no
         put(new King(Color.WHITE, p(5, 6)), 5, 6);   // g6
         put(new King(Color.BLACK, p(7, 7)), 7, 7);   // h8
         put(new Pawn(Color.BLACK, p(4, 0)), 4, 0);   // a5, para que haya material suficiente

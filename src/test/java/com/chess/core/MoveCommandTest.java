@@ -18,7 +18,6 @@ public class MoveCommandTest {
         assertNotNull(board.getPieceAt(new Position(3, 0)));
         
         command.undo();
-        // Se espera que al deshacer, el peón vuelva a su posición original
         assertNotNull(board.getPieceAt(new Position(1, 0)));
         assertNull(board.getPieceAt(new Position(3, 0)));
     }

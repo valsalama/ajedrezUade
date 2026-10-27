@@ -11,23 +11,20 @@ import com.chess.ports.ChessBoard;
 
 public class GameManager {
 
-    /** Todo lo que hace falta recordar de una jugada para poder deshacerla del todo. */
     private static class HistoryEntry {
         Command command;
-        Color mover;                // quién movió
-        Piece captured;             // pieza comida (null si no comió)
+        Color mover;                
+        Piece captured;             
         int previousHalfmoveClock;
         Position previousEnPassantTarget;
         Position previousEnPassantVictim;
-        String positionKey;         // clave de la posición que quedó después de la jugada
-        Piece[][] snapshot;         // cómo quedó el tablero después de la jugada (para revisar la partida)
-        String notation;            // jugada en notación algebraica (ej: e4, Cf3, O-O, exd5, e8=D+)
-        Position from;              // casilla de origen (para el rey en un enroque: la del rey)
-        Position to;                // casilla de destino
+        String positionKey;         
+        Piece[][] snapshot;         
+        String notation;           
+        Position from;             
+        Position to;                
     }
 
-    // Letras de las piezas en la notación (en español: Rey, Dama, Torre, Alfil, Caballo).
-    // El peón no lleva letra. Si preferís la notación internacional, cambiá por K, Q, R, B, N.
     private static String pieceLetter(PieceType type) {
         switch (type) {
             case KING:   return "R";
@@ -46,26 +43,16 @@ public class GameManager {
     private Deque<HistoryEntry> history;
     private Map<Color, List<Piece>> capturedPieces; // Añadido para los tests de AgosL
 
-    // Peón al paso: casilla "salteada" por un peón que acaba de avanzar dos, y
-    // posición de ese peón (el que se puede comer). Ambos son null si no aplica.
     private Position enPassantTarget;
     private Position enPassantVictim;
 
-    // Regla de los 50 movimientos (se cuenta en medias jugadas) y repetición de posiciones
     private int halfmoveClock;
     private Map<String, Integer> positionCounts;
 
-    // Solo se puede deshacer una vez seguida: después de deshacer, el botón
-    // queda bloqueado hasta que se haga una jugada nueva.
     private boolean undoAvailable;
 
-    // Fotos del tablero para revisar la partida jugada por jugada: la posición
-    // inicial y la que quedó después de cada jugada (esta última vive en HistoryEntry)
     private Piece[][] initialSnapshot;
 
-    // Modo búsqueda: lo usa el motor de la IA para probar jugadas y deshacerlas
-    // sin dejar rastro (sin notación, sin fotos, sin tocar la repetición de
-    // posiciones ni el botón de deshacer del jugador).
     private boolean searchMode;
     private boolean undoAvailableBeforeSearch;
 
@@ -87,9 +74,6 @@ public class GameManager {
         return capturedPieces.get(color);
     }
 
-    // ------------------------------------------------------------------
-    // Movimientos legales
-    // ------------------------------------------------------------------
 
     public List<Position> getLegalMoves(Position from) {
         Piece piece = board.getPieceAt(from);
@@ -119,7 +103,6 @@ public class GameManager {
         return legalMoves;
     }
 
-    /** True si el jugador al que le toca tiene al menos una jugada legal. */
     public boolean hasAnyLegalMove() {
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
@@ -129,19 +112,11 @@ public class GameManager {
         return false;
     }
 
-    // ------------------------------------------------------------------
-    // Jugar
-    // ------------------------------------------------------------------
 
     public MoveResult tryMove(Position from, Position to) {
         return tryMove(from, to, PieceType.QUEEN);
     }
 
-    /**
-     * Igual que tryMove, pero indicando a qué pieza corona el peón si la jugada
-     * es una coronación (Dama, Torre, Alfil o Caballo). Para cualquier otra
-     * jugada el parámetro se ignora. Rey y Peón no son opciones válidas.
-     */
     public MoveResult tryMove(Position from, Position to, PieceType promotion) {
         if (promotion == null) promotion = PieceType.QUEEN;
         if (!MoveCommand.isValidPromotionType(promotion)) return MoveResult.INVALID_MOVE;
@@ -169,15 +144,10 @@ public class GameManager {
             return MoveResult.INVALID_MOVE;
         }
 
-        // Si hay una pieza enemiga en el destino, registrarla como capturada
         Piece targetPiece = board.getPieceAt(to);
 
-        // La notación se arma ANTES de mover (hace falta saber qué otras piezas
-        // podían ir al mismo lugar); el "+" o "#" se agrega después, en finishMove
         String notation = searchMode ? null : notationFor(piece, from, to, targetPiece != null, promotion);
 
-        // El movimiento se hace a través de un MoveCommand y se guarda en el
-        // historial, así después se puede deshacer con undoLastMove()
         MoveCommand command = new MoveCommand(board, from, to, piece, targetPiece, promotion);
         HistoryEntry entry = beginEntry(command, targetPiece, from, to);
         command.execute();
@@ -204,8 +174,6 @@ public class GameManager {
         Position newKingPos = new Position(kingFrom.getRow(), kingFrom.getColumn() + (direction * 2));
         Position newRookPos = new Position(kingFrom.getRow(), newKingPos.getColumn() - direction);
 
-        // El enroque son dos movimientos (rey y torre) que se guardan como un
-        // solo comando, así un "deshacer" los revierte a los dos juntos
         MoveCommand kingMove = new MoveCommand(board, kingFrom, newKingPos, king, null);
         MoveCommand rookMove = new MoveCommand(board, rookFrom, newRookPos, rook, null);
         Command castle = new Command() {
@@ -239,15 +207,6 @@ public class GameManager {
         return MoveResult.SUCCESS;
     }
 
-    // ------------------------------------------------------------------
-    // Reglas especiales: enroque y peón al paso
-    // ------------------------------------------------------------------
-
-    /**
-     * Enroque legal: ni el rey ni la torre se movieron, están en la misma fila,
-     * no hay nada entre ellos, el rey no está en jaque y no pasa ni cae en una
-     * casilla atacada.
-     */
     private boolean canCastle(Position kingFrom, Position rookFrom) {
         Piece king = board.getPieceAt(kingFrom);
         Piece rook = board.getPieceAt(rookFrom);
@@ -264,7 +223,6 @@ public class GameManager {
             if (!board.isEmpty(new Position(kingFrom.getRow(), col))) return false;
         }
 
-        // El rey no puede pasar por una casilla atacada ni terminar en una
         for (int step = 1; step <= 2; step++) {
             Position crossing = new Position(kingFrom.getRow(), kingFrom.getColumn() + direction * step);
             if (leavesKingInCheck(kingFrom, crossing, king.getColor())) return false;
@@ -280,11 +238,9 @@ public class GameManager {
         if (victim == null || victim.getType() != PieceType.PAWN || victim.getColor() == pawn.getColor()) return false;
         if (!board.isEmpty(enPassantTarget)) return false;
 
-        // El peón tiene que estar al lado del que acaba de avanzar dos casillas
         if (from.getRow() != enPassantVictim.getRow()) return false;
         if (Math.abs(from.getColumn() - enPassantVictim.getColumn()) != 1) return false;
 
-        // Y la captura no puede dejar al propio rey en jaque
         ChessBoard clone = board.clone();
         clone.removePiece(from);
         clone.removePiece(enPassantVictim);
@@ -299,10 +255,6 @@ public class GameManager {
         clonedBoard.placePiece(clonedPiece, to);
         return checkDetector.isInCheck(color, clonedBoard);
     }
-
-    // ------------------------------------------------------------------
-    // Historial y deshacer
-    // ------------------------------------------------------------------
 
     private HistoryEntry beginEntry(Command command, Piece captured, Position from, Position to) {
         // La primera vez se cuenta la posición inicial (el tablero se arma
@@ -329,7 +281,6 @@ public class GameManager {
         return entry;
     }
 
-    /** Se llama justo después de ejecutar la jugada: cambia el turno y actualiza los contadores. */
     private void finishMove(HistoryEntry entry, String notation, boolean resetsHalfmoveClock,
                             Position newEnPassantTarget, Position newEnPassantVictim) {
         halfmoveClock = resetsHalfmoveClock ? 0 : halfmoveClock + 1;
@@ -338,12 +289,10 @@ public class GameManager {
         currentTurn = (currentTurn == Color.WHITE) ? Color.BLACK : Color.WHITE;
 
         if (searchMode) {
-            // Probando jugadas: solo hace falta poder deshacerlas
             history.push(entry);
             return;
         }
 
-        // Con el turno ya cambiado, se ve si la jugada dejó al rival en jaque ("+") o en mate ("#")
         String suffix = "";
         if (checkDetector.isInCheck(currentTurn, board)) {
             suffix = hasAnyLegalMove() ? "+" : "#";
@@ -357,15 +306,10 @@ public class GameManager {
         undoAvailable = true;
     }
 
-    /** Nombre de una casilla en notación de ajedrez: columna 0 = "a" ... 7 = "h", fila 0 = "1" ... 7 = "8". */
     private static String squareName(Position position) {
         return "" + (char) ('a' + position.getColumn()) + (position.getRow() + 1);
     }
 
-    /**
-     * Notación algebraica de la jugada (sin el "+"/"#" final). Se calcula con el
-     * tablero ANTES de mover. Ejemplos: e4, Cf3, Txd1, Tad1, exd5, e8=D, e8=C.
-     */
     private String notationFor(Piece piece, Position from, Position to, boolean capture, PieceType promotion) {
         StringBuilder san = new StringBuilder();
 
@@ -379,8 +323,6 @@ public class GameManager {
 
         san.append(pieceLetter(piece.getType()));
 
-        // Si otra pieza igual (mismo tipo y color) también podía ir a esa casilla,
-        // se aclara cuál se movió: primero por columna, si no alcanza por fila, si no por las dos
         if (piece.getType() != PieceType.KING) {
             boolean ambiguous = false;
             boolean sameColumn = false;
@@ -415,7 +357,6 @@ public class GameManager {
         return san.toString();
     }
 
-    /** Jugadas hechas hasta ahora, en orden (la primera es de Blancas), en notación algebraica. */
     public List<String> getMoveHistory() {
         List<String> moves = new ArrayList<>();
         java.util.Iterator<HistoryEntry> oldestFirst = history.descendingIterator();
@@ -425,7 +366,6 @@ public class GameManager {
         return moves;
     }
 
-    /** Copia del tablero actual (solo las referencias a las piezas, que no cambian de tipo ni de color). */
     private Piece[][] snapshotBoard() {
         Piece[][] copy = new Piece[8][8];
         for (int r = 0; r < 8; r++) {
@@ -436,10 +376,6 @@ public class GameManager {
         return copy;
     }
 
-    /**
-     * El tablero en cada momento de la partida: el primer elemento es la posición
-     * inicial y después hay uno por cada jugada hecha. Sirve para navegar el historial.
-     */
     public List<Piece[][]> getPositions() {
         List<Piece[][]> positions = new ArrayList<>();
         if (history.isEmpty()) {
@@ -454,7 +390,6 @@ public class GameManager {
         return positions;
     }
 
-    /** Origen y destino de cada jugada hecha, en orden (la misma cantidad que getMoveHistory). */
     public List<Move> getMovesPlayed() {
         List<Move> moves = new ArrayList<>();
         java.util.Iterator<HistoryEntry> oldestFirst = history.descendingIterator();
@@ -465,9 +400,6 @@ public class GameManager {
         return moves;
     }
 
-    // --- Para el motor de búsqueda de la IA (MoveSearcher, mismo paquete) ---
-
-    /** Empieza a probar jugadas: todo lo que se haga hasta endSearch() se tiene que deshacer con undoSearchMove(). */
     void beginSearch() {
         searchMode = true;
         undoAvailableBeforeSearch = undoAvailable;
@@ -478,12 +410,10 @@ public class GameManager {
         undoAvailable = undoAvailableBeforeSearch;
     }
 
-    /** Deshace la última jugada probada en la búsqueda (sin tocar el botón de deshacer del jugador). */
     void undoSearchMove() {
         revertTopEntry();
     }
 
-    /** Última jugada hecha (origen y destino), o null si todavía no se movió nada. */
     public Move getLastMove() {
         HistoryEntry last = history.peek();
         return last == null ? null : new Move(last.from, last.to);
@@ -493,7 +423,6 @@ public class GameManager {
         return undoAvailable && !history.isEmpty();
     }
 
-    /** Deshace una sola jugada (la última que se hizo, de quien sea). */
     public void undoLastMove() {
         if (!canUndo()) return;
         revertTopEntry();
@@ -509,7 +438,6 @@ public class GameManager {
         enPassantTarget = entry.previousEnPassantTarget;
         enPassantVictim = entry.previousEnPassantVictim;
 
-        // Si esa jugada había comido una pieza, la sacamos de la bandeja de quien la comió
         if (entry.captured != null) {
             capturedPieces.get(entry.mover).remove(entry.captured);
         }
@@ -519,13 +447,6 @@ public class GameManager {
         }
     }
 
-    /**
-     * Deshace una "ronda" completa contra la IA: la respuesta de la IA y la
-     * jugada del humano que la provocó, y nada más. Si la IA todavía no había
-     * respondido (por ejemplo, porque la jugada del humano terminó la partida),
-     * solo deshace la jugada del humano. Después de deshacer no se puede volver
-     * a deshacer hasta que se haga una jugada nueva.
-     */
     public boolean undoLastRound(Color humanColor) {
         if (!canUndo()) return false;
         revertTopEntry();
@@ -536,7 +457,6 @@ public class GameManager {
         return true;
     }
 
-    /** Deja el manager como al principio de una partida nueva (turno, capturas e historial). */
     public void reset() {
         currentTurn = Color.WHITE;
         history.clear();
@@ -549,10 +469,6 @@ public class GameManager {
         initialSnapshot = null;
         undoAvailable = false;
     }
-
-    // ------------------------------------------------------------------
-    // Estado de la partida (jaque, jaque mate, tablas)
-    // ------------------------------------------------------------------
 
     public GameState getGameState() {
         boolean inCheck = checkDetector.isInCheck(currentTurn, board);
@@ -573,10 +489,6 @@ public class GameManager {
         return DrawReason.NONE;
     }
 
-    /**
-     * Material insuficiente para dar mate: rey solo contra rey, rey y un
-     * alfil/caballo contra rey, o solo alfiles todos en casillas del mismo color.
-     */
     private boolean hasInsufficientMaterial() {
         int minorPieces = 0;
         int knights = 0;
@@ -608,7 +520,6 @@ public class GameManager {
         return knights == 0 && (bishopsOnLight == 0 || bishopsOnDark == 0);
     }
 
-    /** Identifica una posición para detectar repeticiones: piezas, turno, derechos de enroque y peón al paso. */
     private String positionKey() {
         StringBuilder key = new StringBuilder();
         for (int r = 0; r < 8; r++) {
@@ -627,7 +538,6 @@ public class GameManager {
         }
         key.append(currentTurn == Color.WHITE ? "|W" : "|B");
 
-        // El peón al paso solo cuenta si de verdad se puede ejecutar
         if (enPassantTarget != null && enPassantCapturePossible()) {
             key.append("|ep").append(enPassantTarget.getRow()).append(enPassantTarget.getColumn());
         }

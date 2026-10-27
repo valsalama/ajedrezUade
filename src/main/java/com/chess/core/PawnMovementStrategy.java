@@ -13,8 +13,6 @@ public class PawnMovementStrategy implements MovementStrategy {
         List<Position> moves = new ArrayList<>();
         Piece pawn = board.getPieceAt(from);
 
-        // White starts at rows 0-1 and advances toward row 7 (increasing row).
-        // Black starts at rows 6-7 and advances toward row 0 (decreasing row).
         int direction = (pawn.getColor() == Color.WHITE) ? 1 : -1;
         int oneStepRow = from.getRow() + direction;
 
