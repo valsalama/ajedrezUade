@@ -6,46 +6,30 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
-import com.chess.core.Bishop;
-import com.chess.core.CheckDetector;
-import com.chess.core.Color;
 import com.chess.core.Difficulty;
-import com.chess.core.DrawReason;
-import com.chess.core.GameManager;
-import com.chess.core.GameState;
-import com.chess.core.King;
-import com.chess.core.Knight;
-import com.chess.core.Move;
-import com.chess.core.MoveResult;
-import com.chess.core.MoveSearcher;
-import com.chess.core.Pawn;
-import com.chess.core.Piece;
-import com.chess.core.PieceType;
-import com.chess.core.Position;
-import com.chess.core.Queen;
-import com.chess.core.Rook;
-import com.chess.ports.ChessBoard;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 public class ApiServer {
 
-    private final GameManager gameManager;
-    private final ChessBoard board;
-    private final AIStrategy aiStrategy;
-    private final CheckDetector checkDetector = new CheckDetector();
-    private final HttpServer server;
-    private static final Color HUMAN_COLOR = Color.WHITE;
-    private static final Color AI_COLOR = Color.BLACK;
-    private final java.util.Random random = new java.util.Random();
-    private Difficulty difficulty = Difficulty.MEDIUM; // se cambia al empezar una partida (POST /api/reset)
+    private static final String SESSION_HEADER = "X-Session-Id";
+    private static final String DEFAULT_SESSION = "default";
+    private static final Pattern VALID_SESSION_ID = Pattern.compile("[A-Za-z0-9_-]{8,64}");
+    private static final long IDLE_MILLIS = 30L * 60 * 1000;
+    private static final int MAX_SESSIONS = 500;
+    private static final int WORKER_THREADS = 8;
 
-    public ApiServer(GameManager gameManager, ChessBoard board, AIStrategy aiStrategy, int port) throws IOException {
-        this.gameManager = gameManager;
-        this.board = board;
-        this.aiStrategy = aiStrategy;
+    private final HttpServer server;
+    private final Map<String, GameSession> sessions = new ConcurrentHashMap<>();
+
+    public ApiServer(int port) throws IOException {
         this.server = HttpServer.create(new InetSocketAddress(port), 0);
 
         server.createContext("/api/state", this::handleState);
@@ -54,7 +38,14 @@ public class ApiServer {
         server.createContext("/api/undo", this::handleUndo);
         server.createContext("/api/hint", this::handleHint);
         server.createContext("/api/positions", this::handlePositions);
-        server.setExecutor(null);
+        server.setExecutor(Executors.newFixedThreadPool(WORKER_THREADS));
+
+        ScheduledExecutorService cleaner = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "session-cleaner");
+            thread.setDaemon(true);
+            return thread;
+        });
+        cleaner.scheduleAtFixedRate(this::evictIdleSessions, 5, 5, TimeUnit.MINUTES);
     }
 
     public void start() {
@@ -62,9 +53,48 @@ public class ApiServer {
         System.out.println("API de ajedrez escuchando en http://localhost:" + server.getAddress().getPort());
     }
 
+    public int activeSessions() {
+        return sessions.size();
+    }
+
+    private GameSession sessionFor(HttpExchange exchange) {
+        String id = exchange.getRequestHeaders().getFirst(SESSION_HEADER);
+        if (id == null || !VALID_SESSION_ID.matcher(id).matches()) id = DEFAULT_SESSION;
+
+        GameSession existing = sessions.get(id);
+        if (existing != null) return existing;
+
+        if (sessions.size() >= MAX_SESSIONS) evictOldestSession();
+        return sessions.computeIfAbsent(id, key -> GameSession.create());
+    }
+
+    private void evictIdleSessions() {
+        long limit = System.currentTimeMillis() - IDLE_MILLIS;
+        sessions.entrySet().removeIf(entry -> entry.getValue().getLastUsed() < limit);
+    }
+
+    private void evictOldestSession() {
+        String oldestKey = null;
+        long oldest = Long.MAX_VALUE;
+        for (Map.Entry<String, GameSession> entry : sessions.entrySet()) {
+            long used = entry.getValue().getLastUsed();
+            if (used < oldest) {
+                oldest = used;
+                oldestKey = entry.getKey();
+            }
+        }
+        if (oldestKey != null) sessions.remove(oldestKey);
+    }
+
     private void handleState(HttpExchange exchange) throws IOException {
         if (withCors(exchange, "GET")) return;
-        sendJson(exchange, 200, buildStateJson());
+        GameSession session = sessionFor(exchange);
+        String json;
+        synchronized (session) {
+            session.touch();
+            json = session.stateJson();
+        }
+        sendJson(exchange, 200, json);
     }
 
     private void handleReset(HttpExchange exchange) throws IOException {
@@ -75,65 +105,36 @@ public class ApiServer {
         }
         String body = readBody(exchange);
         Difficulty requested = extractDifficulty(body);
-        if (requested != null) difficulty = requested;
 
-        resetBoard();
-        sendJson(exchange, 200, buildStateJson());
+        GameSession session = sessionFor(exchange);
+        String json;
+        synchronized (session) {
+            session.touch();
+            json = session.resetJson(requested);
+        }
+        sendJson(exchange, 200, json);
     }
 
     private void handleHint(HttpExchange exchange) throws IOException {
         if (withCors(exchange, "GET")) return;
-
-        String json = "{\"hint\":null}";
-        if (gameManager.getCurrentTurn() == HUMAN_COLOR && !isGameOver()) {
-            Move best = new MoveSearcher(gameManager, board).findBestMove(4, 2000, 0);
-            if (best != null) {
-                json = "{\"hint\":{\"fromRow\":" + best.getFrom().getRow() + ",\"fromCol\":" + best.getFrom().getColumn()
-                        + ",\"toRow\":" + best.getTo().getRow() + ",\"toCol\":" + best.getTo().getColumn() + "}}";
-            }
+        GameSession session = sessionFor(exchange);
+        String json;
+        synchronized (session) {
+            session.touch();
+            json = session.hintJson();
         }
         sendJson(exchange, 200, json);
     }
 
     private void handlePositions(HttpExchange exchange) throws IOException {
         if (withCors(exchange, "GET")) return;
-
-        StringBuilder json = new StringBuilder("{\"boards\":[");
-        List<Piece[][]> positions = gameManager.getPositions();
-        for (int i = 0; i < positions.size(); i++) {
-            if (i > 0) json.append(",");
-            json.append("[");
-            for (int row = 0; row < 8; row++) {
-                if (row > 0) json.append(",");
-                json.append("[");
-                for (int col = 0; col < 8; col++) {
-                    if (col > 0) json.append(",");
-                    json.append(pieceJson(positions.get(i)[row][col]));
-                }
-                json.append("]");
-            }
-            json.append("]");
+        GameSession session = sessionFor(exchange);
+        String json;
+        synchronized (session) {
+            session.touch();
+            json = session.positionsJson();
         }
-        json.append("],\"moves\":[");
-        List<Move> moves = gameManager.getMovesPlayed();
-        for (int i = 0; i < moves.size(); i++) {
-            if (i > 0) json.append(",");
-            Move m = moves.get(i);
-            json.append("{\"fromRow\":").append(m.getFrom().getRow()).append(",\"fromCol\":").append(m.getFrom().getColumn())
-                    .append(",\"toRow\":").append(m.getTo().getRow()).append(",\"toCol\":").append(m.getTo().getColumn()).append("}");
-        }
-        json.append("]}");
-        sendJson(exchange, 200, json.toString());
-    }
-
-    private Difficulty extractDifficulty(String body) {
-        if (body == null) return null;
-        int key = body.indexOf("\"difficulty\"");
-        if (key == -1) return null;
-        for (Difficulty candidate : Difficulty.values()) {
-            if (body.indexOf("\"" + candidate.name() + "\"", key) != -1) return candidate;
-        }
-        return null;
+        sendJson(exchange, 200, json);
     }
 
     private void handleUndo(HttpExchange exchange) throws IOException {
@@ -142,10 +143,13 @@ public class ApiServer {
             sendJson(exchange, 405, "{\"error\":\"method not allowed\"}");
             return;
         }
-
-        gameManager.undoLastRound(HUMAN_COLOR);
-
-        sendJson(exchange, 200, buildStateJson());
+        GameSession session = sessionFor(exchange);
+        String json;
+        synchronized (session) {
+            session.touch();
+            json = session.undoJson();
+        }
+        sendJson(exchange, 200, json);
     }
 
     private void handleMove(HttpExchange exchange) throws IOException {
@@ -162,267 +166,29 @@ public class ApiServer {
         int toCol = extractInt(body, "toCol");
         String promotionName = extractString(body, "promotion");
 
-        MoveResult result;
-        boolean gaveCheck = false;
-
-        if (!inBounds(fromRow, fromCol) || !inBounds(toRow, toCol)) {
-            result = MoveResult.INVALID_MOVE;
-        } else {
-            Position from = new Position(fromRow, fromCol);
-            Position to = new Position(toRow, toCol);
-
-            PieceType promotion = PieceType.QUEEN;
-            boolean promotionInvalid = false;
-            if (promotionName != null) {
-                try {
-                    promotion = PieceType.valueOf(promotionName);
-                } catch (IllegalArgumentException e) {
-                    promotionInvalid = true;
-                }
-            }
-
-            result = promotionInvalid ? MoveResult.INVALID_MOVE : gameManager.tryMove(from, to, promotion);
-
-            gaveCheck = result == MoveResult.SUCCESS
-                    && gameManager.getCurrentTurn() == Color.BLACK
-                    && checkDetector.isInCheck(Color.BLACK, board);
-
-            if (result == MoveResult.SUCCESS && gameManager.getCurrentTurn() == Color.BLACK && !isGameOver()) {
-                Move aiMove = chooseAiMove();
-                if (aiMove != null) {
-                    gameManager.tryMove(aiMove.getFrom(), aiMove.getTo());
-                }
-            }
+        GameSession session = sessionFor(exchange);
+        String json;
+        synchronized (session) {
+            session.touch();
+            json = session.moveJson(fromRow, fromCol, toRow, toCol, promotionName);
         }
-
-        StringBuilder json = new StringBuilder();
-        json.append("{");
-        json.append("\"result\":\"").append(result).append("\",");
-        json.append("\"gaveCheck\":").append(gaveCheck).append(",");
-        json.append("\"state\":").append(buildStateJson());
-        json.append("}");
-
-        sendJson(exchange, 200, json.toString());
+        sendJson(exchange, 200, json);
     }
 
-    private boolean inBounds(int row, int col) {
-        return row >= 0 && row < 8 && col >= 0 && col < 8;
-    }
-
-    private boolean isGameOver() {
-        GameState state = gameManager.getGameState();
-        return state == GameState.CHECKMATE || state == GameState.DRAW;
-    }
-    
-    private Move chooseAiMove() {
-        switch (difficulty) {
-            case EASY:
-                return pickEasyMove();
-            case HARD:
-                return new MoveSearcher(gameManager, board).findBestMove(4, 2500, 0);
-            case MEDIUM:
-            default:
-                return new MoveSearcher(gameManager, board).findBestMove(2, 1500, 30);
-        }
-    }
-
-    private Move pickEasyMove() {
-        List<Move> captures = new java.util.ArrayList<>();
-        List<Move> others = new java.util.ArrayList<>();
-        for (int r = 0; r < 8; r++) {
-            for (int c = 0; c < 8; c++) {
-                Position from = new Position(r, c);
-                for (Position to : gameManager.getLegalMoves(from)) {
-                    Move move = new Move(from, to);
-                    if (board.getPieceAt(to) != null) captures.add(move);
-                    else others.add(move);
-                }
-            }
-        }
-        List<Move> all = new java.util.ArrayList<>(captures);
-        all.addAll(others);
-        if (all.isEmpty()) return null;
-        if (!captures.isEmpty() && random.nextInt(100) < 40) {
-            return captures.get(random.nextInt(captures.size()));
-        }
-        return all.get(random.nextInt(all.size()));
-    }
-
-    private String buildStateJson() {
-        StringBuilder json = new StringBuilder();
-        json.append("{");
-
-        Color turn = gameManager.getCurrentTurn();
-        boolean inCheck = checkDetector.isInCheck(turn, board);
-        GameState state = gameManager.getGameState();
-        DrawReason drawReason = state == GameState.DRAW ? gameManager.getDrawReason() : DrawReason.NONE;
-
-        json.append("\"turn\":\"").append(turn).append("\",");
-        json.append("\"gameState\":\"").append(state).append("\",");
-        json.append("\"drawReason\":\"").append(drawReason).append("\",");
-
-        json.append("\"board\":[");
-        for (int row = 0; row < 8; row++) {
-            if (row > 0) json.append(",");
-            json.append("[");
-            for (int col = 0; col < 8; col++) {
-                if (col > 0) json.append(",");
-                Piece piece = board.getPieceAt(new Position(row, col));
-                json.append(pieceJson(piece));
-            }
-            json.append("]");
-        }
-        json.append("],");
-
-        json.append("\"capturedWhite\":").append(capturedJson(Color.WHITE)).append(",");
-        json.append("\"capturedBlack\":").append(capturedJson(Color.BLACK)).append(",");
-        json.append("\"difficulty\":\"").append(difficulty).append("\",");
-        json.append("\"canUndo\":").append(gameManager.canUndo()).append(",");
-        json.append("\"history\":").append(historyJson()).append(",");
-        json.append("\"lastMove\":").append(lastMoveJson()).append(",");
-        json.append("\"legalMoves\":").append(legalMovesJson(turn)).append(",");
-        json.append("\"checkingPiecePositions\":").append(checkingPiecePositionsJson(turn)).append(",");
-        json.append("\"kingInCheckPosition\":").append(inCheck ? kingInCheckPositionJson(turn) : "null");
-
-        json.append("}");
-        return json.toString();
-    }
-
-    private String historyJson() {
-        List<String> moves = gameManager.getMoveHistory();
-        StringBuilder json = new StringBuilder("[");
-        for (int i = 0; i < moves.size(); i++) {
-            if (i > 0) json.append(",");
-            json.append("\"").append(moves.get(i)).append("\"");
-        }
-        json.append("]");
-        return json.toString();
-    }
-
-    private String lastMoveJson() {
-        Move last = gameManager.getLastMove();
-        if (last == null) return "null";
-        return "{\"fromRow\":" + last.getFrom().getRow() + ",\"fromCol\":" + last.getFrom().getColumn()
-                + ",\"toRow\":" + last.getTo().getRow() + ",\"toCol\":" + last.getTo().getColumn() + "}";
-    }
-
-    private String legalMovesJson(Color color) {
-        StringBuilder json = new StringBuilder("[");
-        boolean first = true;
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                Position from = new Position(row, col);
-                for (Position to : gameManager.getLegalMoves(from)) {
-                    if (!first) json.append(",");
-                    json.append("{\"fromRow\":").append(row)
-                            .append(",\"fromCol\":").append(col)
-                            .append(",\"toRow\":").append(to.getRow())
-                            .append(",\"toCol\":").append(to.getColumn()).append("}");
-                    first = false;
-                }
-            }
-        }
-        json.append("]");
-        return json.toString();
-    }
-
-    private String checkingPiecePositionsJson(Color color) {
-        Position king = findKing(color);
-        if (king == null) return "[]";
-
-        Color opponent = color == Color.WHITE ? Color.BLACK : Color.WHITE;
-        StringBuilder json = new StringBuilder("[");
-        boolean first = true;
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                Piece piece = board.getPieceAt(new Position(row, col));
-                if (piece != null && piece.getColor() == opponent
-                        && piece.getPossibleMoves(board).stream()
-                                .anyMatch(move -> move.equals(king))) {
-                    if (!first) json.append(",");
-                    json.append("\"").append(row).append("-").append(col).append("\"");
-                    first = false;
-                }
-            }
-        }
-        json.append("]");
-        return json.toString();
-    }
-
-    private String kingInCheckPositionJson(Color color) {
-        Position king = findKing(color);
-        return king == null ? "null"
-                : "{\"row\":" + king.getRow() + ",\"col\":" + king.getColumn() + "}";
-    }
-
-    private Position findKing(Color color) {
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                Piece piece = board.getPieceAt(new Position(row, col));
-                if (piece != null && piece.getColor() == color && piece.getType() == com.chess.core.PieceType.KING) {
-                    return new Position(row, col);
-                }
-            }
+    private Difficulty extractDifficulty(String body) {
+        if (body == null) return null;
+        int key = body.indexOf("\"difficulty\"");
+        if (key == -1) return null;
+        for (Difficulty candidate : Difficulty.values()) {
+            if (body.indexOf("\"" + candidate.name() + "\"", key) != -1) return candidate;
         }
         return null;
     }
 
-    private String pieceJson(Piece piece) {
-        if (piece == null) return "null";
-        return "{\"id\":\"" + piece.getId() + "\",\"type\":\"" + piece.getType()
-                + "\",\"color\":\"" + piece.getColor() + "\"}";
-    }
-
-    private String capturedJson(Color color) {
-        List<Piece> captured = gameManager.getCapturedPieces(color);
-        StringBuilder json = new StringBuilder("[");
-        for (int i = 0; i < captured.size(); i++) {
-            if (i > 0) json.append(",");
-            json.append(pieceJson(captured.get(i)));
-        }
-        json.append("]");
-        return json.toString();
-    }
-
-    private void resetBoard() {
-        for (int r = 0; r < 8; r++) {
-            for (int c = 0; c < 8; c++) {
-                board.removePiece(new Position(r, c));
-            }
-        }
-        placeInitialPieces();
-        gameManager.reset();
-    }
-
-    private void placeInitialPieces() {
-        place(new Rook(Color.WHITE, p(0, 0)), 0, 0);
-        place(new Knight(Color.WHITE, p(0, 1)), 0, 1);
-        place(new Bishop(Color.WHITE, p(0, 2)), 0, 2);
-        place(new Queen(Color.WHITE, p(0, 3)), 0, 3);
-        place(new King(Color.WHITE, p(0, 4)), 0, 4);
-        place(new Bishop(Color.WHITE, p(0, 5)), 0, 5);
-        place(new Knight(Color.WHITE, p(0, 6)), 0, 6);
-        place(new Rook(Color.WHITE, p(0, 7)), 0, 7);
-        for (int i = 0; i < 8; i++) place(new Pawn(Color.WHITE, p(1, i)), 1, i);
-
-        place(new Rook(Color.BLACK, p(7, 0)), 7, 0);
-        place(new Knight(Color.BLACK, p(7, 1)), 7, 1);
-        place(new Bishop(Color.BLACK, p(7, 2)), 7, 2);
-        place(new Queen(Color.BLACK, p(7, 3)), 7, 3);
-        place(new King(Color.BLACK, p(7, 4)), 7, 4);
-        place(new Bishop(Color.BLACK, p(7, 5)), 7, 5);
-        place(new Knight(Color.BLACK, p(7, 6)), 7, 6);
-        place(new Rook(Color.BLACK, p(7, 7)), 7, 7);
-        for (int i = 0; i < 8; i++) place(new Pawn(Color.BLACK, p(6, i)), 6, i);
-    }
-
-    private Position p(int r, int c) { return new Position(r, c); }
-    private void place(Piece piece, int r, int c) { board.placePiece(piece, new Position(r, c)); }
-
     private boolean withCors(HttpExchange exchange, String allowedMethod) throws IOException {
         exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().add("Access-Control-Allow-Methods", allowedMethod + ", OPTIONS");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type, " + SESSION_HEADER);
         if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(204, -1);
             return true;
@@ -449,7 +215,6 @@ public class ApiServer {
         }
     }
 
-    /** Valor de texto de una clave del JSON ("clave":"VALOR"), o null si no está. */
     private String extractString(String json, String key) {
         if (json == null) return null;
         int keyIndex = json.indexOf("\"" + key + "\"");
