@@ -1,7 +1,6 @@
 package com.chess.core;
 
 import com.chess.adapters.FakeSoundAdapter;
-import com.chess.core.PieceType;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

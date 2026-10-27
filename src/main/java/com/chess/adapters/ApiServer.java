@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import com.chess.core.Difficulty;
@@ -28,8 +29,14 @@ public class ApiServer {
 
     private final HttpServer server;
     private final Map<String, GameSession> sessions = new ConcurrentHashMap<>();
+    private final Supplier<GameSession> sessionFactory;
 
     public ApiServer(int port) throws IOException {
+        this(port, GameSession::create);
+    }
+
+    public ApiServer(int port, Supplier<GameSession> sessionFactory) throws IOException {
+        this.sessionFactory = sessionFactory;
         this.server = HttpServer.create(new InetSocketAddress(port), 0);
 
         server.createContext("/api/state", this::handleState);
@@ -65,7 +72,7 @@ public class ApiServer {
         if (existing != null) return existing;
 
         if (sessions.size() >= MAX_SESSIONS) evictOldestSession();
-        return sessions.computeIfAbsent(id, key -> GameSession.create());
+        return sessions.computeIfAbsent(id, key -> sessionFactory.get());
     }
 
     private void evictIdleSessions() {

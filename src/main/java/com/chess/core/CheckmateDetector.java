@@ -3,7 +3,15 @@ package com.chess.core;
 import com.chess.ports.ChessBoard;
 
 public class CheckmateDetector {
-    private final CheckDetector checkDetector = new CheckDetector();
+    private final CheckDetector checkDetector;
+
+    public CheckmateDetector() {
+        this(new CheckDetector());
+    }
+
+    public CheckmateDetector(CheckDetector checkDetector) {
+        this.checkDetector = checkDetector;
+    }
 
     public boolean isCheckmate(Color color, ChessBoard board) {
         return checkDetector.isInCheck(color, board) && !hasAnyLegalMove(color, board);

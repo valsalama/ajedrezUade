@@ -13,16 +13,16 @@ public class GameManager {
 
     private static class HistoryEntry {
         Command command;
-        Color mover;                
-        Piece captured;             
+        Color mover;
+        Piece captured;
         int previousHalfmoveClock;
         Position previousEnPassantTarget;
         Position previousEnPassantVictim;
-        String positionKey;         
-        Piece[][] snapshot;         
-        String notation;           
-        Position from;             
-        Position to;                
+        String positionKey;
+        Piece[][] snapshot;
+        String notation;
+        Position from;
+        Position to;
     }
 
     private static String pieceLetter(PieceType type) {
@@ -41,7 +41,7 @@ public class GameManager {
     private CheckDetector checkDetector;
     private MoveValidator moveValidator;
     private Deque<HistoryEntry> history;
-    private Map<Color, List<Piece>> capturedPieces; // Añadido para los tests de AgosL
+    private Map<Color, List<Piece>> capturedPieces;
 
     private Position enPassantTarget;
     private Position enPassantVictim;
@@ -57,10 +57,14 @@ public class GameManager {
     private boolean undoAvailableBeforeSearch;
 
     public GameManager(ChessBoard board) {
+        this(board, new CheckDetector(), new MoveValidator());
+    }
+
+    public GameManager(ChessBoard board, CheckDetector checkDetector, MoveValidator moveValidator) {
         this.board = board;
         this.currentTurn = Color.WHITE;
-        this.checkDetector = new CheckDetector();
-        this.moveValidator = new MoveValidator();
+        this.checkDetector = checkDetector;
+        this.moveValidator = moveValidator;
         this.history = new ArrayDeque<>();
         this.capturedPieces = new HashMap<>();
         this.capturedPieces.put(Color.WHITE, new ArrayList<>());
@@ -73,7 +77,6 @@ public class GameManager {
     public List<Piece> getCapturedPieces(Color color) {
         return capturedPieces.get(color);
     }
-
 
     public List<Position> getLegalMoves(Position from) {
         Piece piece = board.getPieceAt(from);
@@ -112,7 +115,6 @@ public class GameManager {
         return false;
     }
 
-
     public MoveResult tryMove(Position from, Position to) {
         return tryMove(from, to, PieceType.QUEEN);
     }
@@ -125,7 +127,6 @@ public class GameManager {
         if (piece == null) return MoveResult.INVALID_MOVE;
         if (piece.getColor() != currentTurn) return MoveResult.NOT_YOUR_TURN;
 
-        // Enroque: se pide moviendo el rey dos columnas hacia una de sus torres
         if (piece.getType() == PieceType.KING
                 && from.getRow() == to.getRow()
                 && Math.abs(to.getColumn() - from.getColumn()) == 2) {
@@ -133,7 +134,6 @@ public class GameManager {
             return tryCastle(from, new Position(from.getRow(), rookCol));
         }
 
-        // Peón al paso
         if (piece.getType() == PieceType.PAWN && to.equals(enPassantTarget) && canCaptureEnPassant(piece, from)) {
             return executeEnPassant(piece, from, to);
         }
@@ -257,8 +257,6 @@ public class GameManager {
     }
 
     private HistoryEntry beginEntry(Command command, Piece captured, Position from, Position to) {
-        // La primera vez se cuenta la posición inicial (el tablero se arma
-        // después de crear el GameManager, por eso no se puede hacer en el constructor)
         if (!searchMode && positionCounts.isEmpty()) {
             positionCounts.merge(positionKey(), 1, Integer::sum);
         }
@@ -317,7 +315,7 @@ public class GameManager {
             if (capture) san.append((char) ('a' + from.getColumn())).append('x');
             san.append(squareName(to));
             int lastRow = piece.getColor() == Color.WHITE ? 7 : 0;
-            if (to.getRow() == lastRow) san.append('=').append(pieceLetter(promotion)); // pieza elegida al coronar
+            if (to.getRow() == lastRow) san.append('=').append(pieceLetter(promotion));
             return san.toString();
         }
 
@@ -482,7 +480,7 @@ public class GameManager {
     public DrawReason getDrawReason() {
         boolean inCheck = checkDetector.isInCheck(currentTurn, board);
         if (!inCheck && !hasAnyLegalMove()) return DrawReason.STALEMATE;
-        if (inCheck && !hasAnyLegalMove()) return DrawReason.NONE; // jaque mate, no son tablas
+        if (inCheck && !hasAnyLegalMove()) return DrawReason.NONE;
         if (hasInsufficientMaterial()) return DrawReason.INSUFFICIENT_MATERIAL;
         if (positionCounts.getOrDefault(positionKey(), 0) >= 3) return DrawReason.THREEFOLD_REPETITION;
         if (halfmoveClock >= 100) return DrawReason.FIFTY_MOVE_RULE;
@@ -511,7 +509,7 @@ public class GameManager {
                         minorPieces++;
                         break;
                     default:
-                        return false; // peón, torre o dama: siempre alcanza para mate
+                        return false;
                 }
             }
         }

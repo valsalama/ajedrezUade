@@ -6,7 +6,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MediumAIStrategy implements AIStrategy {
-    private final EasyAIStrategy fallbackStrategy = new EasyAIStrategy();
+    private final AIStrategy fallbackStrategy;
+
+    public MediumAIStrategy() {
+        this(new EasyAIStrategy());
+    }
+
+    public MediumAIStrategy(AIStrategy fallbackStrategy) {
+        this.fallbackStrategy = fallbackStrategy;
+    }
 
     @Override
     public Move getNextMove(ChessBoard board, Color color) {

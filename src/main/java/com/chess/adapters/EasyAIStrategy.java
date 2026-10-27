@@ -6,9 +6,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-public class EasyAIStrategy {
-    private Random random = new Random();
+public class EasyAIStrategy implements AIStrategy {
+    private final Random random;
 
+    public EasyAIStrategy() {
+        this(new Random());
+    }
+
+    public EasyAIStrategy(Random random) {
+        this.random = random;
+    }
+
+    @Override
     public Move getNextMove(ChessBoard board, Color color) {
         List<Move> validMoves = new ArrayList<>();
         for (int r = 0; r < 8; r++) {

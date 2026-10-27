@@ -7,7 +7,15 @@ import java.util.List;
 
 public class KingMovementStrategy implements MovementStrategy {
 
-    private final QueenMovementStrategy queenLikeStrategy = new QueenMovementStrategy();
+    private final MovementStrategy queenLikeStrategy;
+
+    public KingMovementStrategy() {
+        this(new QueenMovementStrategy());
+    }
+
+    public KingMovementStrategy(MovementStrategy queenLikeStrategy) {
+        this.queenLikeStrategy = queenLikeStrategy;
+    }
 
     @Override
     public List<Position> getValidMoves(Position from, ChessBoard board) {

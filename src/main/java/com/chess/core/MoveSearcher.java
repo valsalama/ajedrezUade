@@ -11,11 +11,11 @@ public class MoveSearcher {
 
     private static final int MATE = 100_000;
     private static final int INFINITY = 1_000_000;
-    private static final int QUIESCENCE_LIMIT = 4; // capturas seguidas que se siguen mirando al final de la búsqueda
+    private static final int QUIESCENCE_LIMIT = 4;
 
     private final GameManager gameManager;
     private final ChessBoard board;
-    private final CheckDetector checkDetector = new CheckDetector();
+    private final CheckDetector checkDetector;
     private final Random random;
 
     private long deadlineNanos;
@@ -27,20 +27,16 @@ public class MoveSearcher {
     }
 
     public MoveSearcher(GameManager gameManager, ChessBoard board, Random random) {
+        this(gameManager, board, new CheckDetector(), random);
+    }
+
+    public MoveSearcher(GameManager gameManager, ChessBoard board, CheckDetector checkDetector, Random random) {
         this.gameManager = gameManager;
         this.board = board;
+        this.checkDetector = checkDetector;
         this.random = random;
     }
 
-    /**
-     * Mejor jugada para quien tiene el turno.
-     *
-     * @param maxDepth    cuántas jugadas (medias jugadas) mira hacia adelante como máximo
-     * @param timeLimitMs tiempo máximo para pensar; si se acaba, se usa lo mejor encontrado hasta ahí
-     * @param toleranceCp si es mayor que 0, elige al azar entre las jugadas que valen hasta esa cantidad
-     *                    de centésimas de peón menos que la mejor (hace que juegue menos perfecto y más variado)
-     * @return la jugada elegida, o null si no hay ninguna jugada legal
-     */
     public Move findBestMove(int maxDepth, long timeLimitMs, int toleranceCp) {
         gameManager.beginSearch();
         try {
@@ -55,7 +51,7 @@ public class MoveSearcher {
             timeUp = false;
             nodeCounter = 0;
 
-            int[] bestScores = null; // puntajes de la última profundidad que se terminó de calcular
+            int[] bestScores = null;
             List<Move> bestOrder = rootMoves;
 
             for (int depth = 1; depth <= maxDepth; depth++) {
@@ -72,7 +68,7 @@ public class MoveSearcher {
                     if (score > alpha) alpha = score;
                 }
 
-                if (timeUp) break; // esta profundidad quedó a medias: se descarta y se queda la anterior
+                if (timeUp) break;
 
                 bestScores = scores;
                 List<Move> sorted = new ArrayList<>(bestOrder);
@@ -89,7 +85,7 @@ public class MoveSearcher {
                 bestOrder = reordered;
                 bestScores = reorderedScores;
 
-                if (bestScores[0] >= MATE - 100) break; // ya encontró un mate: no hace falta mirar más profundo
+                if (bestScores[0] >= MATE - 100) break;
             }
 
             if (bestScores == null) {
@@ -199,7 +195,6 @@ public class MoveSearcher {
         return score;
     }
 
-
     static int value(PieceType type) {
         switch (type) {
             case PAWN:   return 100;
@@ -236,9 +231,9 @@ public class MoveSearcher {
     }
 
     private int positional(Piece piece, int row, int col, boolean queensOnBoard) {
-        int advance = piece.getColor() == Color.WHITE ? row : 7 - row; // cuántas filas avanzó (0 = su fila inicial)
-        double centerDistance = Math.max(Math.abs(row - 3.5), Math.abs(col - 3.5)); // 0.5 en el centro, 3.5 en el borde
-        double centrality = 3.5 - centerDistance; // 3 en el centro, 0 en el borde
+        int advance = piece.getColor() == Color.WHITE ? row : 7 - row;
+        double centerDistance = Math.max(Math.abs(row - 3.5), Math.abs(col - 3.5));
+        double centrality = 3.5 - centerDistance;
 
         switch (piece.getType()) {
             case PAWN: {
@@ -249,14 +244,14 @@ public class MoveSearcher {
             case KNIGHT: return (int) (centrality * 12);
             case BISHOP: return (int) (centrality * 5);
             case QUEEN:  return (int) (centrality * 2);
-            case ROOK:   return advance == 6 ? 15 : 0; // torre en la séptima fila
+            case ROOK:   return advance == 6 ? 15 : 0;
             case KING: {
                 if (queensOnBoard) {
                     int shelter = advance == 0 ? 20 : 0;
                     if (advance == 0 && (col <= 2 || col >= 6)) shelter += 15;
                     return shelter - (int) (centrality * 6);
                 }
-                return (int) (centrality * 8); // en el final el rey tiene que participar
+                return (int) (centrality * 8);
             }
             default: return 0;
         }

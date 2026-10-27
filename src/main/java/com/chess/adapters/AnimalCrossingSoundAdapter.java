@@ -5,7 +5,15 @@ import com.chess.ports.SoundPort;
 import javax.sound.sampled.*;
 
 public class AnimalCrossingSoundAdapter implements SoundPort {
-    private DialogBox dialogBox = new DialogBox();
+    private final DialogBox dialogBox;
+
+    public AnimalCrossingSoundAdapter() {
+        this(new DialogBox());
+    }
+
+    public AnimalCrossingSoundAdapter(DialogBox dialogBox) {
+        this.dialogBox = dialogBox;
+    }
 
     private void generateTone(int hz, int msecs) {
         try {

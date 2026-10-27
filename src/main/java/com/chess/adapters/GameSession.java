@@ -17,6 +17,7 @@ import com.chess.core.Knight;
 import com.chess.core.Move;
 import com.chess.core.MoveResult;
 import com.chess.core.MoveSearcher;
+import com.chess.core.MoveValidator;
 import com.chess.core.Pawn;
 import com.chess.core.Piece;
 import com.chess.core.PieceType;
@@ -31,20 +32,24 @@ public class GameSession {
 
     private final ChessBoard board;
     private final GameManager gameManager;
-    private final CheckDetector checkDetector = new CheckDetector();
-    private final Random random = new Random();
+    private final CheckDetector checkDetector;
+    private final Random random;
     private Difficulty difficulty = Difficulty.MEDIUM;
     private volatile long lastUsed = System.currentTimeMillis();
 
-    private GameSession(ChessBoard board) {
+    GameSession(ChessBoard board, GameManager gameManager, CheckDetector checkDetector, Random random) {
         this.board = board;
-        this.gameManager = new GameManager(board);
+        this.gameManager = gameManager;
+        this.checkDetector = checkDetector;
+        this.random = random;
     }
 
     public static GameSession create() {
         ChessBoard board = new ArrayChessBoard();
         placeInitialPieces(board);
-        return new GameSession(board);
+        CheckDetector checkDetector = new CheckDetector();
+        GameManager gameManager = new GameManager(board, checkDetector, new MoveValidator());
+        return new GameSession(board, gameManager, checkDetector, new Random());
     }
 
     public void touch() {
@@ -73,7 +78,7 @@ public class GameSession {
     public String hintJson() {
         String json = "{\"hint\":null}";
         if (gameManager.getCurrentTurn() == HUMAN_COLOR && !isGameOver()) {
-            Move best = new MoveSearcher(gameManager, board).findBestMove(4, 2000, 0);
+            Move best = new MoveSearcher(gameManager, board, checkDetector, random).findBestMove(4, 2000, 0);
             if (best != null) {
                 json = "{\"hint\":{\"fromRow\":" + best.getFrom().getRow() + ",\"fromCol\":" + best.getFrom().getColumn()
                         + ",\"toRow\":" + best.getTo().getRow() + ",\"toCol\":" + best.getTo().getColumn() + "}}";
@@ -168,10 +173,10 @@ public class GameSession {
             case EASY:
                 return pickEasyMove();
             case HARD:
-                return new MoveSearcher(gameManager, board).findBestMove(4, 2500, 0);
+                return new MoveSearcher(gameManager, board, checkDetector, random).findBestMove(4, 2500, 0);
             case MEDIUM:
             default:
-                return new MoveSearcher(gameManager, board).findBestMove(2, 1500, 30);
+                return new MoveSearcher(gameManager, board, checkDetector, random).findBestMove(2, 1500, 30);
         }
     }
 

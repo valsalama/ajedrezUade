@@ -7,8 +7,17 @@ import java.util.List;
 
 public class QueenMovementStrategy implements MovementStrategy {
 
-    private final MovementStrategy rookStrategy = new RookMovementStrategy();
-    private final MovementStrategy bishopStrategy = new BishopMovementStrategy();
+    private final MovementStrategy rookStrategy;
+    private final MovementStrategy bishopStrategy;
+
+    public QueenMovementStrategy() {
+        this(new RookMovementStrategy(), new BishopMovementStrategy());
+    }
+
+    public QueenMovementStrategy(MovementStrategy rookStrategy, MovementStrategy bishopStrategy) {
+        this.rookStrategy = rookStrategy;
+        this.bishopStrategy = bishopStrategy;
+    }
 
     @Override
     public List<Position> getValidMoves(Position from, ChessBoard board) {
